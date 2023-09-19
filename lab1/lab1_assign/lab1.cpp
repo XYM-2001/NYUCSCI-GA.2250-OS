@@ -33,14 +33,19 @@ map<string, Symbol> symbolTable;
 vector<Module> moduleBaseTable;
 int currentModule = 0;
 
-void passOne(ifstream &inputFile)
+void passOne(vector<string> tokens)
 {
-    // Implement pass one logic here
+    // string signal = "None";
+    // for (int i = 0; i < tokens.size(); ++i)
+    // {
+    //     if (signal == "None")
+    //     {
+    //     }
+    // }
 }
 
 void passTwo(ifstream &inputFile)
 {
-    // Implement pass two logic here
 }
 
 vector<string> getToken(string filename)
@@ -55,13 +60,16 @@ vector<string> getToken(string filename)
     string line;
     while (getline(inputFile, line))
     {
-        regex delimiter("[ \t\n]+");
-        sregex_token_iterator it(line.begin(), line.end(), delimiter, -1);
-        sregex_token_iterator end;
-        while (it != end)
+        if (!line.empty())
         {
-            tokens.push_back(it->str());
-            ++it;
+            regex delimiter("[ \t\n]+");
+            sregex_token_iterator it(line.begin(), line.end(), delimiter, -1);
+            sregex_token_iterator end;
+            while (it != end)
+            {
+                tokens.push_back(it->str());
+                ++it;
+            }
         }
     }
     inputFile.close();
@@ -77,9 +85,12 @@ int main(int argc, char *argv[])
     }
 
     vector<string> tokens = getToken(argv[1]);
-    for (const std::string &token : tokens)
+    for (string i : tokens)
     {
-        cout << token << endl;
+        cout << i << "\n";
     }
+    cout << tokens.size();
+
+    // passOne(tokens);
     return 0;
 }
