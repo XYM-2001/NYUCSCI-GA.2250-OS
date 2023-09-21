@@ -33,15 +33,38 @@ map<string, Symbol> symbolTable;
 vector<Module> moduleBaseTable;
 int currentModule = 0;
 
+int readInt(string token)
+{
+    return 0;
+}
+
+string checkSym(string token)
+{
+    return token;
+}
+
+string readIAER(string token)
+{
+    return token;
+}
 void passOne(vector<string> tokens)
 {
-    // string signal = "None";
-    // for (int i = 0; i < tokens.size(); ++i)
-    // {
-    //     if (signal == "None")
-    //     {
-    //     }
-    // }
+    int i = 0;
+
+    while (i < tokens.size())
+    {
+        Module new_module;
+        if (moduleBaseTable.empty())
+        {
+            new_module.baseAddress = 0;
+        }
+        else
+        {
+            new_module.baseAddress = moduleBaseTable.back().baseAddress;
+        }
+
+        int defcount = readInt();
+    }
 }
 
 void passTwo(ifstream &inputFile)
@@ -58,21 +81,22 @@ vector<string> getToken(string filename)
         return tokens;
     }
     string line;
+    string file_content;
     while (getline(inputFile, line))
     {
-        if (!line.empty())
-        {
-            regex delimiter("[ \t\n]+");
-            sregex_token_iterator it(line.begin(), line.end(), delimiter, -1);
-            sregex_token_iterator end;
-            while (it != end)
-            {
-                tokens.push_back(it->str());
-                ++it;
-            }
-        }
+        file_content += line;
     }
     inputFile.close();
+    regex delimiterPattern("[ \t\n]+");
+
+    sregex_token_iterator iter(file_content.begin(), file_content.end(), delimiterPattern, -1);
+    sregex_token_iterator end;
+
+    while (iter != end)
+    {
+        tokens.push_back(*iter);
+        ++iter;
+    }
     return tokens;
 }
 
@@ -85,11 +109,11 @@ int main(int argc, char *argv[])
     }
 
     vector<string> tokens = getToken(argv[1]);
-    for (string i : tokens)
-    {
-        cout << i << "\n";
-    }
-    cout << tokens.size();
+    // for (int i = 0; i < tokens.size(); i++)
+    // {
+    //     cout << tokens[i] << "\n";
+    // }
+    // cout << tokens.size();
 
     // passOne(tokens);
     return 0;
