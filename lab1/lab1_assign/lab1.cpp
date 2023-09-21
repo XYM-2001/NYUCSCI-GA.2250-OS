@@ -86,7 +86,7 @@ void passOne(vector<string> tokens)
         }
         else
         {
-            new_module.baseAddress = moduleBaseTable.back().baseAddress;
+            new_module.baseAddress = moduleBaseTable.back().baseAddress + moduleBaseTable.back().instructions.size();
         }
 
         int defcount = readInt(tokens[i]);
@@ -200,11 +200,10 @@ int main(int argc, char *argv[])
     //     cout << tokens[i] << "\n";
     // }
     // cout << tokens.size();
-
-    // passOne(tokens);
-    // for (Module i : moduleBaseTable)
-    // {
-    //     printModule(i);
-    // }
+    passOne(tokens);
+    for (Module i : moduleBaseTable)
+    {
+        printModule(i);
+    }
     return 0;
 }
