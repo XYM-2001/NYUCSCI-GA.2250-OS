@@ -120,9 +120,10 @@ void passOne(vector<string> tokens)
             Instruction curr_ins;
             curr_ins.addrMode = readIAER(tokens[i]);
             curr_ins.operand = readInt(tokens[i + 1]);
+            instructions.push_back(curr_ins);
             i += 2;
         }
-
+        new_module.instructions = instructions;
         moduleBaseTable.push_back(new_module);
     }
 }
@@ -140,12 +141,14 @@ vector<string> getToken(string filename)
         std::cerr << "Error: Unable to open file " << filename << std::endl;
         return tokens;
     }
-    string line;
-    string file_content;
-    while (getline(inputFile, line))
-    {
-        file_content += line;
-    }
+    // string line;
+    // string file_content;
+    // while (getline(inputFile, line))
+    // {
+    //     file_content += line;
+    // }
+    std::string file_content((std::istreambuf_iterator<char>(inputFile)),
+                             (std::istreambuf_iterator<char>()));
     inputFile.close();
     regex delimiterPattern("[ \t\n]+");
 
@@ -158,6 +161,29 @@ vector<string> getToken(string filename)
         ++iter;
     }
     return tokens;
+}
+
+void printModule(const Module &module)
+{
+    std::cout << "Base Address: " << module.baseAddress << std::endl;
+
+    std::cout << "Definitions:" << std::endl;
+    for (const Symbol &symbol : module.definitions)
+    {
+        std::cout << "Name: " << symbol.name << ", Address: " << symbol.address << std::endl;
+    }
+
+    std::cout << "Use List:" << std::endl;
+    for (const std::string &use : module.useList)
+    {
+        std::cout << use << std::endl;
+    }
+
+    std::cout << "Instructions:" << std::endl;
+    for (const Instruction &instruction : module.instructions)
+    {
+        std::cout << "Address Mode: " << instruction.addrMode << ", Operand: " << instruction.operand << std::endl;
+    }
 }
 
 int main(int argc, char *argv[])
@@ -176,5 +202,9 @@ int main(int argc, char *argv[])
     // cout << tokens.size();
 
     // passOne(tokens);
+    // for (Module i : moduleBaseTable)
+    // {
+    //     printModule(i);
+    // }
     return 0;
 }
