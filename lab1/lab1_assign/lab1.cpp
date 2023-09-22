@@ -32,6 +32,8 @@ struct Module
 map<string, Symbol> symbolTable;
 vector<Module> moduleBaseTable;
 int currentModule = 0;
+int linenum = 1;
+int offset = 0;
 
 int readInt(string token)
 {
@@ -188,16 +190,21 @@ void passTwo(ifstream &inputFile)
 //     return tokens;
 // }
 
-string getToken(ifstream &inputFile)
+string getToken(std::ifstream &inputFile)
 {
     std::string token;
 
     // Skip leading whitespace characters
-    while (inputFile >> std::ws)
+    while (inputFile >> ws)
     {
         char c = inputFile.get();
+        offset += 1;
         if (c == ' ' || c == '\t' || c == '\n')
         {
+            if (c == '\n')
+            {
+                linenum++; // Increment line number on newline
+            }
             continue; // Skip delimiter characters
         }
         else
@@ -211,8 +218,13 @@ string getToken(ifstream &inputFile)
     while (true)
     {
         char c = inputFile.get();
-        if (inputFile.eof() || c == ' ' || c == '\t' || c == '\n')
+        offset += 1;
+        if (c == ' ' || c == '\t' || c == '\n' || inputFile.eof())
         {
+            if (c == '\n')
+            {
+                linenum++; // Increment line number on newline
+            }
             break; // Return the token if a delimiter or end of file is reached
         }
         else
@@ -260,6 +272,12 @@ int main(int argc, char *argv[])
     {
         cerr << "Error: Unable to open file " << argv[1] << endl;
     }
+    string token;
+    while (!(token = getToken(inputFile)).empty())
+    {
+        cout << "Token: " << token << "linenum: " << linenum << "offset: ";
+    }
+    inputFile.close();
     // vector<string> tokens = getToken(argv[1]);
 
     // for (int i = 0; i < tokens.size(); i++)
