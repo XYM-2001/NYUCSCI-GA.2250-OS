@@ -37,6 +37,42 @@ int offset = 0;
 int line_changed = 0;
 int prev_token;
 
+void __parseerror(int errcode)
+{
+    string errstr[] = {
+        "NUM_EXPECTED",           // Number expect, anything >= 2^30 is not a number either
+        "SYM_EXPECTED",           // Symbol Expected
+        "MARIE_EXPECTED",         // Addressing Expected which is M/A/R/I/E
+        "SYM_TOO_LONG",           // Symbol Name is too long
+        "TOO_MANY_DEF_IN_MODULE", // > 16
+        "TOO_MANY_USE_IN_MODULE", // > 16
+        "TOO_MANY_INSTR",         // total num_instr exceeds memory size (512)
+    };
+    std::cout << "Parse Error line " << linenum << " offset " << offset << ": " << errstr[errcode] << endl;
+}
+void printModule(const Module &module)
+{
+    std::cout << "Base Address: " << module.baseAddress << std::endl;
+
+    std::cout << "Definitions:" << std::endl;
+    for (const Symbol &symbol : module.definitions)
+    {
+        std::cout << "Name: " << symbol.name << ", Address: " << symbol.address << std::endl;
+    }
+
+    std::cout << "Use List:" << std::endl;
+    for (const std::string &use : module.useList)
+    {
+        std::cout << use << std::endl;
+    }
+
+    std::cout << "Instructions:" << std::endl;
+    for (const Instruction &instruction : module.instructions)
+    {
+        std::cout << "Address Mode: " << instruction.addrMode << ", Operand: " << instruction.instruction << std::endl;
+    }
+}
+
 string getToken(std::ifstream &inputFile)
 {
     offset += prev_token;
@@ -95,7 +131,12 @@ string getToken(std::ifstream &inputFile)
 
 int readInt(ifstream &inputFile)
 {
-    string token = getToken(inputFile);
+    string token;
+    if ((token = getToken(inputFile)).empty())
+    {
+        return EOF;
+    }
+    prev_token = token.length();
     int out = 0;
     try
     {
@@ -103,18 +144,13 @@ int readInt(ifstream &inputFile)
     }
     catch (const std::invalid_argument &e)
     {
-        cerr << "Invalid argument: " << e.what() << std::endl;
+        cerr << "Syntax error: invalid token" << endl;
+        exit(1);
     }
     catch (const std::out_of_range &e)
     {
-        cerr << "Out of range: " << e.what() << std::endl;
-    }
-    offset += token.length();
-    if (line_changed)
-    {
-        linenum += 1;
-        offset = 0;
-        line_changed = 0;
+        cerr << "Syntax error: token out of range" << endl;
+        exit(1);
     }
     return out;
 }
@@ -122,162 +158,119 @@ int readInt(ifstream &inputFile)
 string readSym(ifstream &inputFile)
 {
     string token = getToken(inputFile);
-    if (token.length() > 16)
+    prev_token = token.length();
+    if (prev_token > 16)
     {
-        cerr << "symbol name out of range";
+        __parseerror(3);
     }
     if (!isalpha(token[0]))
     {
-        cerr << "symbol name not starting with an Alpha char";
+        cerr << "Syntax error: non-alpha symbol name" << endl;
+        exit(1);
     }
     if (token.length() > 1)
     {
         regex pattern("^[a-zA-Z]+$|^[0-9]+$");
         if (!regex_match(token.substr(1), pattern))
         {
-            cerr << "symbol name wrong format";
+            cerr << "Syntax error: wrong symbol name pattern" << endl;
+            exit(1);
         }
     }
 
     return token;
 }
 
-char readIAER(string token)
+char readIAER(ifstream &inputFile)
 {
+    string token = getToken(inputFile);
+    prev_token = token.length();
     if (token.length() != 1)
     {
-        cerr << "not a single char";
+        cerr << "Syntax error: addrmode exceeds length 1" << endl;
+        exit(1);
     }
     if (token[0] != 'M' && token[0] != 'A' && token[0] != 'R' && token[0] != 'I' && token[0] != 'E')
     {
-        cerr << "not a valid operand";
+        cerr << "Syntax error: invalid char" << endl;
+        exit(1);
     }
     return token[0];
 }
 
-// void passOne(ifstream &inputFile)
-// {
-//     int i = 0;
-//     string token;
-//     while (!inputFile.eof())
-//     {
-//         Module new_module;
-//         if (moduleBaseTable.empty())
-//         {
-//             new_module.baseAddress = 0;
-//         }
-//         else
-//         {
-//             new_module.baseAddress = moduleBaseTable.back().baseAddress + moduleBaseTable.back().instructions.size();
-//         }
+void passOne(ifstream &inputFile)
+{
+    while (!inputFile.eof())
+    {
+        Module new_module;
+        if (moduleBaseTable.empty())
+        {
+            new_module.baseAddress = 0;
+        }
+        else
+        {
+            new_module.baseAddress = moduleBaseTable.back().baseAddress + moduleBaseTable.back().instructions.size();
+        }
 
-//         int defcount = readInt(tokens[i]);
-//         i += 1;
-//         vector<Symbol> deflist;
-//         for (int j = 0; j < defcount; j++)
-//         {
-//             Symbol curr;
-//             curr.name = readSym(tokens[i]);
-//             curr.address = readInt(tokens[i + 1]);
-//             deflist.push_back(curr);
-//             i += 2;
-//         }
-//         new_module.definitions = deflist;
+        int defcount = readInt(inputFile);
+        if (defcount == EOF)
+        {
+            return;
+        }
+        vector<Symbol> deflist;
+        for (int i = 0; i < defcount; i++)
+        {
+            Symbol curr;
+            curr.name = readSym(inputFile);
+            curr.address = readInt(inputFile);
+            deflist.push_back(curr);
+        }
+        new_module.definitions = deflist;
 
-//         int usecount = readInt(tokens[i]);
-//         i += 1;
-//         vector<string> uselist;
-//         for (int j = 0; j < usecount; j++)
-//         {
-//             uselist.push_back(readSym(tokens[i]));
-//             i += 1;
-//         }
-//         new_module.useList = uselist;
+        int usecount = readInt(inputFile);
+        vector<string> uselist;
+        for (int i = 0; i < usecount; i++)
+        {
+            uselist.push_back(readSym(inputFile));
+        }
+        new_module.useList = uselist;
 
-//         int instcount = readInt(tokens[i]);
-//         i += 1;
-//         vector<Instruction> instructions;
-//         for (int j = 0; j < instcount; j++)
-//         {
-//             Instruction curr_ins;
-//             curr_ins.addrMode = readIAER(tokens[i]);
-//             curr_ins.instruction = readInt(tokens[i + 1]);
-//             if ((curr_ins.instruction / 1000) >= 10)
-//             {
-//                 cerr << "instruction opecode >= 10";
-//             }
-//             if (curr_ins.addrMode == 'A')
-//             {
-//                 if ((curr_ins.instruction % 1000) >= 512)
-//                 {
-//                     cerr << "instruction operand greater than machine size";
-//                 }
-//             }
-//             else if (curr_ins.addrMode == 'I')
-//             {
-//                 if ((curr_ins.instruction % 1000) >= 900)
-//                 {
-//                     cerr << "instruction operand greater than 900";
-//                 }
-//             }
-//             instructions.push_back(curr_ins);
-//             i += 2;
-//         }
-//         new_module.instructions = instructions;
-//         moduleBaseTable.push_back(new_module);
-//     }
-// }
+        int instcount = readInt(inputFile);
+        vector<Instruction> instructions;
+        for (int i = 0; i < instcount; i++)
+        {
+            Instruction curr_ins;
+            curr_ins.addrMode = readIAER(inputFile);
+            curr_ins.instruction = readInt(inputFile);
+            if ((curr_ins.instruction / 1000) >= 10)
+            {
+                cerr << "instruction opcode >= 10";
+            }
+            if (curr_ins.addrMode == 'A')
+            {
+                if ((curr_ins.instruction % 1000) >= 512)
+                {
+                    cerr << "instruction operand greater than machine size";
+                }
+            }
+            else if (curr_ins.addrMode == 'I')
+            {
+                if ((curr_ins.instruction % 1000) >= 900)
+                {
+                    cerr << "instruction operand greater than 900";
+                }
+            }
+            instructions.push_back(curr_ins);
+        }
+        new_module.instructions = instructions;
+        moduleBaseTable.push_back(new_module);
+        printModule(new_module);
+    }
+    return;
+}
 
 void passTwo(ifstream &inputFile)
 {
-}
-
-// vector<string> getToken(string filename)
-// {
-//     vector<string> tokens;
-//     ifstream inputFile(filename);
-//     if (!inputFile.is_open())
-//     {
-//         std::cerr << "Error: Unable to open file " << filename << std::endl;
-//         return tokens;
-//     }
-//     std::string file_content((std::istreambuf_iterator<char>(inputFile)),
-//                              (std::istreambuf_iterator<char>()));
-//     inputFile.close();
-//     regex delimiterPattern("[ \t\n]+");
-
-//     sregex_token_iterator iter(file_content.begin(), file_content.end(), delimiterPattern, -1);
-//     sregex_token_iterator end;
-
-//     while (iter != end)
-//     {
-//         tokens.push_back(*iter);
-//         ++iter;
-//     }
-//     return tokens;
-// }
-
-void printModule(const Module &module)
-{
-    std::cout << "Base Address: " << module.baseAddress << std::endl;
-
-    std::cout << "Definitions:" << std::endl;
-    for (const Symbol &symbol : module.definitions)
-    {
-        std::cout << "Name: " << symbol.name << ", Address: " << symbol.address << std::endl;
-    }
-
-    std::cout << "Use List:" << std::endl;
-    for (const std::string &use : module.useList)
-    {
-        std::cout << use << std::endl;
-    }
-
-    std::cout << "Instructions:" << std::endl;
-    for (const Instruction &instruction : module.instructions)
-    {
-        std::cout << "Address Mode: " << instruction.addrMode << ", Operand: " << instruction.instruction << std::endl;
-    }
 }
 
 int main(int argc, char *argv[])
@@ -300,10 +293,8 @@ int main(int argc, char *argv[])
     //     prev_token = token.length();
     // }
 
+    passOne(inputFile);
     inputFile.close();
-
-    // passOne(inputFile);
-
     // for (Module i : moduleBaseTable)
     // {
     //     printModule(i);
