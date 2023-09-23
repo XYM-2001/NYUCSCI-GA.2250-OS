@@ -34,6 +34,7 @@ vector<Module> moduleBaseTable;
 int currentModule = 0;
 int linenum = 1;
 int offset = 0;
+int line_changed = 0;
 
 int readInt(string token)
 {
@@ -204,6 +205,7 @@ string getToken(std::ifstream &inputFile)
             if (c == '\n')
             {
                 linenum++; // Increment line number on newline
+                offset = 0;
             }
             continue; // Skip delimiter characters
         }
@@ -218,12 +220,11 @@ string getToken(std::ifstream &inputFile)
     while (true)
     {
         char c = inputFile.get();
-        offset += 1;
         if (c == ' ' || c == '\t' || c == '\n' || inputFile.eof())
         {
             if (c == '\n')
             {
-                linenum++; // Increment line number on newline
+                line_changed = 1; // Increment line number on newline
             }
             break; // Return the token if a delimiter or end of file is reached
         }
@@ -275,10 +276,15 @@ int main(int argc, char *argv[])
     string token;
     while (!(token = getToken(inputFile)).empty())
     {
-        cout << "Token: " << token << "linenum: " << linenum << "offset: ";
+        cout << "Token: " << token << " linenum: " << linenum << " offset: " << offset << endl;
+        offset += (token.length() - 1);
+        if (line_changed)
+        {
+            linenum += 1;
+            line_changed = 0;
+        }
     }
     inputFile.close();
-    // vector<string> tokens = getToken(argv[1]);
 
     // for (int i = 0; i < tokens.size(); i++)
     // {
