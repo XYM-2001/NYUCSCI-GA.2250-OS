@@ -35,9 +35,67 @@ int currentModule = 0;
 int linenum = 1;
 int offset = 0;
 int line_changed = 0;
+int prev_token;
 
-int readInt(string token)
+string getToken(std::ifstream &inputFile)
 {
+    offset += prev_token;
+    if (line_changed)
+    {
+        linenum += 1;
+        offset = 0;
+        line_changed = 0;
+    }
+    std::string token;
+    // Skip leading whitespace characters
+    while (true)
+    {
+        char c = inputFile.get();
+        offset += 1;
+        if (c == ' ' || c == '\t' || c == '\n')
+        {
+            if (c == '\n')
+            {
+                linenum++; // Increment line number on newline
+                offset = 0;
+            }
+            continue; // Skip delimiter characters
+        }
+        else if (inputFile.eof())
+        {
+            return token;
+        }
+        else
+        {
+            token += c; // Append the character to the token
+            break;
+        }
+    }
+
+    // Read characters until a delimiter or end of file is encountered
+    while (true)
+    {
+        char c = inputFile.get();
+        if (c == ' ' || c == '\t' || c == '\n' || inputFile.eof())
+        {
+            if (c == '\n')
+            {
+                line_changed = 1; // Increment line number on newline
+            }
+            break; // Return the token if a delimiter or end of file is reached
+        }
+        else
+        {
+            token += c; // Append the character to the token
+        }
+    }
+
+    return token;
+}
+
+int readInt(ifstream &inputFile)
+{
+    string token = getToken(inputFile);
     int out = 0;
     try
     {
@@ -51,11 +109,19 @@ int readInt(string token)
     {
         cerr << "Out of range: " << e.what() << std::endl;
     }
+    offset += token.length();
+    if (line_changed)
+    {
+        linenum += 1;
+        offset = 0;
+        line_changed = 0;
+    }
     return out;
 }
 
-string readSym(string token)
+string readSym(ifstream &inputFile)
 {
+    string token = getToken(inputFile);
     if (token.length() > 16)
     {
         cerr << "symbol name out of range";
@@ -92,8 +158,8 @@ char readIAER(string token)
 // void passOne(ifstream &inputFile)
 // {
 //     int i = 0;
-
-//     while (i < tokens.size())
+//     string token;
+//     while (!inputFile.eof())
 //     {
 //         Module new_module;
 //         if (moduleBaseTable.empty())
@@ -191,52 +257,6 @@ void passTwo(ifstream &inputFile)
 //     return tokens;
 // }
 
-string getToken(std::ifstream &inputFile)
-{
-    std::string token;
-
-    // Skip leading whitespace characters
-    while (inputFile >> ws)
-    {
-        char c = inputFile.get();
-        offset += 1;
-        if (c == ' ' || c == '\t' || c == '\n')
-        {
-            if (c == '\n')
-            {
-                linenum++; // Increment line number on newline
-                offset = 0;
-            }
-            continue; // Skip delimiter characters
-        }
-        else
-        {
-            token += c; // Append the character to the token
-            break;
-        }
-    }
-
-    // Read characters until a delimiter or end of file is encountered
-    while (true)
-    {
-        char c = inputFile.get();
-        if (c == ' ' || c == '\t' || c == '\n' || inputFile.eof())
-        {
-            if (c == '\n')
-            {
-                line_changed = 1; // Increment line number on newline
-            }
-            break; // Return the token if a delimiter or end of file is reached
-        }
-        else
-        {
-            token += c; // Append the character to the token
-        }
-    }
-
-    return token;
-}
-
 void printModule(const Module &module)
 {
     std::cout << "Base Address: " << module.baseAddress << std::endl;
@@ -273,24 +293,14 @@ int main(int argc, char *argv[])
     {
         cerr << "Error: Unable to open file " << argv[1] << endl;
     }
-    string token;
-    while (!(token = getToken(inputFile)).empty())
-    {
-        cout << "Token: " << token << " linenum: " << linenum << " offset: " << offset << endl;
-        offset += (token.length() - 1);
-        if (line_changed)
-        {
-            linenum += 1;
-            line_changed = 0;
-        }
-    }
-    inputFile.close();
-
-    // for (int i = 0; i < tokens.size(); i++)
+    // string token;
+    // while (!(token = getToken(inputFile)).empty())
     // {
-    //     cout << tokens[i] << "\n";
+    //     cout << "Token: " << token << " linenum: " << linenum << " offset: " << offset << endl;
+    //     prev_token = token.length();
     // }
-    // cout << tokens.size();
+
+    inputFile.close();
 
     // passOne(inputFile);
 
