@@ -11,7 +11,6 @@ using namespace std;
 struct Symbol
 {
     string name;
-    int module;
     int address;
 };
 
@@ -29,9 +28,9 @@ struct Module
     vector<Instruction> instructions;
 };
 
-map<string, Symbol> symbolTable;
+vector<Symbol> symbolTable;
 vector<Module> moduleBaseTable;
-int currentModule = 0;
+int totalcode = 0;
 int linenum = 1;
 int offset = 0;
 int line_changed = 0;
@@ -50,6 +49,7 @@ void __parseerror(int errcode)
     };
     std::cout << "Parse Error line " << linenum << " offset " << offset << ": " << errstr[errcode] << endl;
 }
+
 void printModule(const Module &module)
 {
     std::cout << "Base Address: " << module.baseAddress << std::endl;
@@ -57,20 +57,36 @@ void printModule(const Module &module)
     std::cout << "Definitions:" << std::endl;
     for (const Symbol &symbol : module.definitions)
     {
-        std::cout << "Name: " << symbol.name << ", Address: " << symbol.address << std::endl;
+        std::cout << "  Name: " << symbol.name << ", Address: " << symbol.address << std::endl;
     }
 
     std::cout << "Use List:" << std::endl;
     for (const std::string &use : module.useList)
     {
-        std::cout << use << std::endl;
+        std::cout << "  " << use << std::endl;
     }
 
     std::cout << "Instructions:" << std::endl;
-    for (const Instruction &instruction : module.instructions)
+    for (const Instruction &instr : module.instructions)
     {
-        std::cout << "Address Mode: " << instruction.addrMode << ", Operand: " << instruction.instruction << std::endl;
+        std::cout << "  Addr Mode: " << instr.addrMode << ", Instruction: " << instr.instruction << std::endl;
     }
+}
+
+void printSymboltable()
+{
+    cout << "Symbol Table" << endl;
+    for (Symbol &symbol : symbolTable)
+    {
+        cout << symbol.name << "=" << symbol.address << endl;
+    }
+}
+
+Symbol createSymbol(string symbolname, int val)
+{
+    Symbol out;
+    out.address = val;
+    out.name = symbolname;
 }
 
 string getToken(std::ifstream &inputFile)
@@ -200,7 +216,8 @@ char readIAER(ifstream &inputFile)
 
 void passOne(ifstream &inputFile)
 {
-    while (!inputFile.eof())
+    int prev_length = 0;
+    while (true)
     {
         Module new_module;
         if (moduleBaseTable.empty())
@@ -209,7 +226,7 @@ void passOne(ifstream &inputFile)
         }
         else
         {
-            new_module.baseAddress = moduleBaseTable.back().baseAddress + moduleBaseTable.back().instructions.size();
+            new_module.baseAddress = moduleBaseTable.back().baseAddress + prev_length;
         }
 
         int defcount = readInt(inputFile);
@@ -217,56 +234,48 @@ void passOne(ifstream &inputFile)
         {
             return;
         }
-        vector<Symbol> deflist;
         for (int i = 0; i < defcount; i++)
         {
-            Symbol curr;
-            curr.name = readSym(inputFile);
-            curr.address = readInt(inputFile);
-            deflist.push_back(curr);
+            string sym = readSym(inputFile);
+            int val = readInt(inputFile);
+            Symbol curr = createSymbol(sym, val + new_module.baseAddress);
+            symbolTable.push_back(curr);
         }
-        new_module.definitions = deflist;
 
         int usecount = readInt(inputFile);
-        vector<string> uselist;
         for (int i = 0; i < usecount; i++)
         {
-            uselist.push_back(readSym(inputFile));
+            string sym = readSym(inputFile);
         }
-        new_module.useList = uselist;
 
         int instcount = readInt(inputFile);
-        vector<Instruction> instructions;
+        prev_length = instcount;
         for (int i = 0; i < instcount; i++)
         {
-            Instruction curr_ins;
-            curr_ins.addrMode = readIAER(inputFile);
-            curr_ins.instruction = readInt(inputFile);
-            if ((curr_ins.instruction / 1000) >= 10)
+            char addrMode = readIAER(inputFile);
+            int instruction = readInt(inputFile);
+            if ((instruction / 1000) >= 10)
             {
                 cerr << "instruction opcode >= 10";
             }
-            if (curr_ins.addrMode == 'A')
+            if (addrMode == 'A')
             {
-                if ((curr_ins.instruction % 1000) >= 512)
+                if ((instruction % 1000) >= 512)
                 {
                     cerr << "instruction operand greater than machine size";
                 }
             }
-            else if (curr_ins.addrMode == 'I')
+            else if (addrMode == 'I')
             {
-                if ((curr_ins.instruction % 1000) >= 900)
+                if ((instruction % 1000) >= 900)
                 {
                     cerr << "instruction operand greater than 900";
                 }
             }
-            instructions.push_back(curr_ins);
         }
-        new_module.instructions = instructions;
         moduleBaseTable.push_back(new_module);
         printModule(new_module);
     }
-    return;
 }
 
 void passTwo(ifstream &inputFile)
@@ -294,6 +303,7 @@ int main(int argc, char *argv[])
     // }
 
     passOne(inputFile);
+    printSymboltable();
     inputFile.close();
     // for (Module i : moduleBaseTable)
     // {
