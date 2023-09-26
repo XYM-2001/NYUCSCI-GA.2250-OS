@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <regex>
+#include <iomanip>
 
 using namespace std;
 
@@ -28,8 +29,9 @@ struct Module
     vector<Instruction> instructions;
 };
 
-vector<Symbol> symbolTable;
+map<string, int> symbolTable;
 vector<Module> moduleBaseTable;
+vector<int> memory_map;
 int totalcode = 0;
 int linenum = 1;
 int offset = 0;
@@ -76,9 +78,19 @@ void printModule(const Module &module)
 void printSymboltable()
 {
     cout << "Symbol Table" << endl;
-    for (Symbol &symbol : symbolTable)
+    for (auto it = symbolTable.begin(); it != symbolTable.end(); ++it)
     {
-        cout << symbol.name << "=" << symbol.address << endl;
+        cout << it->first << "=" << it->second << endl;
+    }
+}
+
+void printMemorymap()
+{
+    cout << "Memory Map" << endl;
+    for (int i = 0; i < memory_map.size(); i++)
+    {
+        cout << setw(3) << setfill('0') << i;
+        cout << ": " << memory_map[i] << endl;
     }
 }
 
@@ -87,6 +99,7 @@ Symbol createSymbol(string symbolname, int val)
     Symbol out;
     out.address = val;
     out.name = symbolname;
+    return out;
 }
 
 string getToken(std::ifstream &inputFile)
@@ -238,8 +251,7 @@ void passOne(ifstream &inputFile)
         {
             string sym = readSym(inputFile);
             int val = readInt(inputFile);
-            Symbol curr = createSymbol(sym, val + new_module.baseAddress);
-            symbolTable.push_back(curr);
+            symbolTable[sym] = val + new_module.baseAddress;
         }
 
         int usecount = readInt(inputFile);
@@ -249,6 +261,7 @@ void passOne(ifstream &inputFile)
         }
 
         int instcount = readInt(inputFile);
+        totalcode += instcount;
         prev_length = instcount;
         for (int i = 0; i < instcount; i++)
         {
@@ -274,12 +287,98 @@ void passOne(ifstream &inputFile)
             }
         }
         moduleBaseTable.push_back(new_module);
-        printModule(new_module);
+    }
+    if (totalcode >= 512)
+    {
+        __parseerror(6);
     }
 }
 
-void passTwo(ifstream &inputFile)
+void passTwo(ifstream &inputFile_new)
 {
+    // for (int i = 0; i < moduleBaseTable.size(); i++)
+    // {
+    //     int defcount = readInt(inputFile_new);
+    //     cout << defcount << " ";
+    //     for (int j = 0; j < defcount; j++)
+    //     {
+    //         string sym = readSym(inputFile_new);
+    //         int val = readInt(inputFile_new);
+    //         cout << sym << " " << val << " ";
+    //     }
+    //     cout << endl;
+    //     int usecount = readInt(inputFile_new);
+    //     cout << usecount << " ";
+    //     for (int j = 0; j < usecount; j++)
+    //     {
+    //         string sym = readSym(inputFile_new);
+    //         cout << sym << " ";
+    //     }
+    //     cout << endl;
+    //     int instcount = readInt(inputFile_new);
+    //     cout << instcount << " ";
+    //     for (int j = 0; j < instcount; j++)
+    //     {
+    //         char addrMode = readIAER(inputFile_new);
+    //         int instruction = readInt(inputFile_new);
+    //         cout << addrMode << " " << instruction << " ";
+    //     }
+    //     cout << endl;
+    // }
+
+    for (int i = 0; i < moduleBaseTable.size(); i++)
+    {
+        int defcount = readInt(inputFile_new);
+        for (int j = 0; j < defcount; j++)
+        {
+            string sym = readSym(inputFile_new);
+            int val = readInt(inputFile_new);
+        }
+
+        int usecount = readInt(inputFile_new);
+        vector<string> uselist;
+        for (int j = 0; j < usecount; j++)
+        {
+            string sym = readSym(inputFile_new);
+            uselist.push_back(sym);
+        }
+
+        int instcount = readInt(inputFile_new);
+        for (int j = 0; j < instcount; j++)
+        {
+            char addrMode = readIAER(inputFile_new);
+            int instruction = readInt(inputFile_new);
+            int opcode = instruction / 1000;
+            int oprand = instruction % 1000;
+            if (addrMode == 'M')
+            {
+                instruction = opcode * 1000 + moduleBaseTable[i].baseAddress;
+            }
+            else if (addrMode == 'A')
+            {
+                if (oprand >= 512)
+                {
+                    cerr << "operand exceeding machine size" << endl;
+                }
+            }
+            else if (addrMode == 'R')
+            {
+                instruction = moduleBaseTable[i].baseAddress + instruction;
+            }
+            else if (addrMode == 'I')
+            {
+                if (oprand >= 900)
+                {
+                    cerr << "immediate address must be less than 900" << endl;
+                }
+            }
+            else
+            {
+                instruction = opcode * 1000 + symbolTable[uselist[oprand]];
+            }
+            memory_map.push_back(instruction);
+        }
+    }
 }
 
 int main(int argc, char *argv[])
@@ -305,10 +404,23 @@ int main(int argc, char *argv[])
     passOne(inputFile);
     printSymboltable();
     inputFile.close();
-    // for (Module i : moduleBaseTable)
+    prev_token = 0;
+    linenum = 1;
+
+    ifstream inputFile_new(argv[1]);
+    if (!inputFile_new.is_open())
+    {
+        cerr << "Error: Unable to open file " << argv[1] << endl;
+    }
+
+    passTwo(inputFile_new);
+    printMemorymap();
+    // string token;
+    // while (!(token = getToken(inputFile_new)).empty())
     // {
-    //     printModule(i);
+    //     cout << "Token: " << token << " linenum: " << linenum << " offset: " << offset << endl;
+    //     prev_token = token.length();
     // }
-    // cout << moduleBaseTable.size();
+    inputFile_new.close();
     return 0;
 }
