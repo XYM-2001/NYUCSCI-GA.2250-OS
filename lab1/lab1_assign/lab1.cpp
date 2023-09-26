@@ -30,6 +30,7 @@ struct Module
 };
 
 map<string, int> symbolTable;
+map<string, int> symbolused;
 vector<Module> moduleBaseTable;
 vector<int> memory_map;
 int totalcode = 0;
@@ -329,19 +330,24 @@ void passTwo(ifstream &inputFile_new)
     for (int i = 0; i < moduleBaseTable.size(); i++)
     {
         int defcount = readInt(inputFile_new);
+        vector<Symbol> deflist;
         for (int j = 0; j < defcount; j++)
         {
             string sym = readSym(inputFile_new);
             int val = readInt(inputFile_new);
+            deflist.push_back(createSymbol(sym, val));
         }
+        moduleBaseTable[i].definitions = deflist;
 
         int usecount = readInt(inputFile_new);
         vector<string> uselist;
         for (int j = 0; j < usecount; j++)
         {
             string sym = readSym(inputFile_new);
+            symbolused[sym] = 1;
             uselist.push_back(sym);
         }
+        moduleBaseTable[i].useList = uselist;
 
         int instcount = readInt(inputFile_new);
         for (int j = 0; j < instcount; j++)
@@ -381,6 +387,20 @@ void passTwo(ifstream &inputFile_new)
     }
 }
 
+void checkUnusedvar()
+{
+    for (int i = 0; i < moduleBaseTable.size(); i++)
+    {
+        for (Symbol sym : moduleBaseTable[i].definitions)
+        {
+            if (symbolused.count(sym.name) == 0)
+            {
+                cout << "Warning: Module " << i + 1 << ": " << sym.name << " was defined but never used" << endl;
+            }
+        }
+    }
+}
+
 int main(int argc, char *argv[])
 {
     if (argc != 2)
@@ -415,6 +435,7 @@ int main(int argc, char *argv[])
 
     passTwo(inputFile_new);
     printMemorymap();
+    checkUnusedvar();
     // string token;
     // while (!(token = getToken(inputFile_new)).empty())
     // {
