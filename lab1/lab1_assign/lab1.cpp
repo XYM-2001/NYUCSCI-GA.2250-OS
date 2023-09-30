@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <utility>
 #include <cstring>
+#include <bits/stdc++.h>
 
 using namespace std;
 
@@ -54,30 +55,30 @@ void __parseerror(int errcode)
         "TOO_MANY_USE_IN_MODULE", // > 16
         "TOO_MANY_INSTR",         // total num_instr exceeds memory size (512)
     };
-    std::cout << "Parse Error line " << linenum << " offset " << offset << ": " << errstr[errcode] << endl;
+    cout << "Parse Error line " << linenum << " offset " << offset << ": " << errstr[errcode] << endl;
     exit(1);
 }
 
 void printModule(const Module &module)
 {
-    std::cout << "Base Address: " << module.baseAddress << std::endl;
+    cout << "Base Address: " << module.baseAddress << endl;
 
-    std::cout << "Definitions:" << std::endl;
+    cout << "Definitions:" << endl;
     for (const Symbol &symbol : module.definitions)
     {
-        std::cout << "  Name: " << symbol.name << ", Address: " << symbol.address << std::endl;
+        cout << "  Name: " << symbol.name << ", Address: " << symbol.address << endl;
     }
 
-    std::cout << "Use List:" << std::endl;
-    for (const std::string &use : module.useList)
+    cout << "Use List:" << endl;
+    for (const string &use : module.useList)
     {
-        std::cout << "  " << use << std::endl;
+        cout << "  " << use << endl;
     }
 
-    std::cout << "Instructions:" << std::endl;
+    cout << "Instructions:" << endl;
     for (const Instruction &instr : module.instructions)
     {
-        std::cout << "  Addr Mode: " << instr.addrMode << ", Instruction: " << instr.instruction << std::endl;
+        cout << "  Addr Mode: " << instr.addrMode << ", Instruction: " << instr.instruction << endl;
     }
 }
 
@@ -108,7 +109,7 @@ Symbol createSymbol(string symbolname, int val)
     return out;
 }
 
-string getToken(std::ifstream &inputFile)
+string getToken(ifstream &inputFile)
 {
     offset += prev_token;
     if (line_changed > 0)
@@ -118,8 +119,7 @@ string getToken(std::ifstream &inputFile)
         offset = 0;
         line_changed = 0;
     }
-    std::string token;
-    // Skip leading whitespace characters
+    string token;
     while (true)
     {
         char c = inputFile.get();
@@ -185,7 +185,7 @@ int readInt(ifstream &inputFile)
         {
             out = stoi(token);
         }
-        catch (const std::invalid_argument &e)
+        catch (const invalid_argument &e)
         {
             if (inputFile.eof())
             {
@@ -195,7 +195,17 @@ int readInt(ifstream &inputFile)
             inputFile.close();
             __parseerror(0);
         }
-        catch (const std::out_of_range &e)
+        catch (const out_of_range &e)
+        {
+            if (inputFile.eof())
+            {
+                linenum -= line_changed + 1;
+                offset = prev_offset + 1;
+            }
+            inputFile.close();
+            __parseerror(0);
+        }
+        if (out >= pow(2, 30))
         {
             if (inputFile.eof())
             {
@@ -213,18 +223,23 @@ int readInt(ifstream &inputFile)
     {
         out = stoi(token);
     }
-    catch (const std::invalid_argument &e)
+    catch (const invalid_argument &e)
     {
         inputFile.close();
         __parseerror(0);
     }
-    catch (const std::out_of_range &e)
+    catch (const out_of_range &e)
     {
         if (inputFile.eof())
         {
             linenum -= line_changed + 1;
             offset = prev_offset + 1;
         }
+        inputFile.close();
+        __parseerror(0);
+    }
+    if (out >= pow(2, 30))
+    {
         inputFile.close();
         __parseerror(0);
     }
@@ -258,9 +273,19 @@ string readSym(ifstream &inputFile)
             regex pattern("^[a-zA-Z]+$|^[0-9]+$");
             if (!regex_match(token.substr(1), pattern))
             {
-                cerr << "Syntax error: wrong symbol name pattern" << endl;
-                exit(1);
+                if (inputFile.eof())
+                {
+                    linenum -= line_changed + 1;
+                    offset = prev_offset + 1;
+                }
+                inputFile.close();
+                __parseerror(1);
             }
+            return token;
+        }
+        else
+        {
+            return token;
         }
     }
     else
@@ -282,8 +307,8 @@ string readSym(ifstream &inputFile)
             regex pattern("^[a-zA-Z]+$|^[0-9]+$");
             if (!regex_match(token.substr(1), pattern))
             {
-                cerr << "Syntax error: wrong symbol name pattern" << endl;
-                exit(1);
+                inputFile.close();
+                __parseerror(1);
             }
             return token;
         }
@@ -585,35 +610,22 @@ int main(int argc, char *argv[])
     if (!inputFile.is_open())
     {
         cerr << "Error: Unable to open file " << argv[1] << endl;
+        return 1;
     }
-    // string token;
-    // while (!(token = getToken(inputFile)).empty())
-    // {
-    //     cout << "Token: " << token << " linenum: " << linenum << " offset: " << offset << endl;
-    //     prev_token = token.length();
-    // }
 
     passOne(inputFile);
     printSymboltable();
     inputFile.close();
-    // prev_token = 0;
-    // linenum = 1;
 
     ifstream inputFile_new(argv[1]);
     if (!inputFile_new.is_open())
     {
         cerr << "Error: Unable to open file " << argv[1] << endl;
+        return 1;
     }
     cout << "Memory Map" << endl;
     passTwo(inputFile_new);
     checkUnusedvar();
-
-    // string token;
-    // while (!(token = getToken(inputFile_new)).empty())
-    // {
-    //     cout << "Token: " << token << " linenum: " << linenum << " offset: " << offset << endl;
-    //     prev_token = token.length();
-    // }
 
     inputFile_new.close();
     return 0;
