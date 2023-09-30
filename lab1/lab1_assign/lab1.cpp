@@ -6,6 +6,8 @@
 #include <map>
 #include <regex>
 #include <iomanip>
+#include <utility>
+#include <cstring>
 
 using namespace std;
 
@@ -13,6 +15,7 @@ struct Symbol
 {
     string name;
     int address;
+    string message;
 };
 
 struct Instruction
@@ -29,13 +32,14 @@ struct Module
     vector<Instruction> instructions;
 };
 
-map<string, int> symbolTable;
+map<string, pair<int, string>> symbolTable;
 map<string, int> symbolused;
 vector<Module> moduleBaseTable;
-vector<int> memory_map;
+vector<pair<int, string>> memory_map;
 int totalcode = 0;
 int linenum = 1;
 int offset = 0;
+int prev_offset;
 int line_changed = 0;
 int prev_token;
 
@@ -51,6 +55,7 @@ void __parseerror(int errcode)
         "TOO_MANY_INSTR",         // total num_instr exceeds memory size (512)
     };
     std::cout << "Parse Error line " << linenum << " offset " << offset << ": " << errstr[errcode] << endl;
+    exit(1);
 }
 
 void printModule(const Module &module)
@@ -81,7 +86,7 @@ void printSymboltable()
     cout << "Symbol Table" << endl;
     for (auto it = symbolTable.begin(); it != symbolTable.end(); ++it)
     {
-        cout << it->first << "=" << it->second << endl;
+        cout << it->first << "=" << it->second.first << " " << it->second.second << endl;
     }
 }
 
@@ -91,7 +96,7 @@ void printMemorymap()
     for (int i = 0; i < memory_map.size(); i++)
     {
         cout << setw(3) << setfill('0') << i;
-        cout << ": " << memory_map[i] << endl;
+        cout << ": " << memory_map[i].first << " " << memory_map[i].second << endl;
     }
 }
 
@@ -106,9 +111,10 @@ Symbol createSymbol(string symbolname, int val)
 string getToken(std::ifstream &inputFile)
 {
     offset += prev_token;
-    if (line_changed)
+    if (line_changed > 0)
     {
-        linenum += 1;
+        linenum += line_changed;
+        prev_offset = offset - 1;
         offset = 0;
         line_changed = 0;
     }
@@ -123,12 +129,17 @@ string getToken(std::ifstream &inputFile)
             if (c == '\n')
             {
                 linenum++; // Increment line number on newline
+                prev_offset = offset - 1;
                 offset = 0;
             }
             continue; // Skip delimiter characters
         }
         else if (inputFile.eof())
         {
+            if (offset == 0)
+            {
+                line_changed = 1;
+            }
             return token;
         }
         else
@@ -146,7 +157,7 @@ string getToken(std::ifstream &inputFile)
         {
             if (c == '\n')
             {
-                line_changed = 1; // Increment line number on newline
+                line_changed = 1;
             }
             break; // Return the token if a delimiter or end of file is reached
         }
@@ -166,6 +177,36 @@ int readInt(ifstream &inputFile)
     {
         return EOF;
     }
+    if (line_changed > 0)
+    {
+        prev_token = token.length();
+        int out = 0;
+        try
+        {
+            out = stoi(token);
+        }
+        catch (const std::invalid_argument &e)
+        {
+            if (inputFile.eof())
+            {
+                linenum -= line_changed + 1;
+                offset = prev_offset + 1;
+            }
+            inputFile.close();
+            __parseerror(0);
+        }
+        catch (const std::out_of_range &e)
+        {
+            if (inputFile.eof())
+            {
+                linenum -= line_changed + 1;
+                offset = prev_offset + 1;
+            }
+            inputFile.close();
+            __parseerror(0);
+        }
+        return out;
+    }
     prev_token = token.length();
     int out = 0;
     try
@@ -174,56 +215,113 @@ int readInt(ifstream &inputFile)
     }
     catch (const std::invalid_argument &e)
     {
-        cerr << "Syntax error: invalid token" << endl;
-        exit(1);
+        inputFile.close();
+        __parseerror(0);
     }
     catch (const std::out_of_range &e)
     {
-        cerr << "Syntax error: token out of range" << endl;
-        exit(1);
+        if (inputFile.eof())
+        {
+            linenum -= line_changed + 1;
+            offset = prev_offset + 1;
+        }
+        inputFile.close();
+        __parseerror(0);
     }
     return out;
 }
 
 string readSym(ifstream &inputFile)
 {
-    string token = getToken(inputFile);
-    prev_token = token.length();
-    if (prev_token > 16)
+    string token;
+    if (line_changed > 0)
     {
-        __parseerror(3);
-    }
-    if (!isalpha(token[0]))
-    {
-        cerr << "Syntax error: non-alpha symbol name" << endl;
-        exit(1);
-    }
-    if (token.length() > 1)
-    {
-        regex pattern("^[a-zA-Z]+$|^[0-9]+$");
-        if (!regex_match(token.substr(1), pattern))
+        string token = getToken(inputFile);
+        prev_token = token.length();
+        if (prev_token > 16)
         {
-            cerr << "Syntax error: wrong symbol name pattern" << endl;
-            exit(1);
+            inputFile.close();
+            __parseerror(3);
+        }
+        if (!isalpha(token[0]))
+        {
+            if (inputFile.eof())
+            {
+                linenum -= line_changed + 1;
+                offset = prev_offset + 1;
+            }
+            inputFile.close();
+            __parseerror(1);
+        }
+        if (token.length() > 1)
+        {
+            regex pattern("^[a-zA-Z]+$|^[0-9]+$");
+            if (!regex_match(token.substr(1), pattern))
+            {
+                cerr << "Syntax error: wrong symbol name pattern" << endl;
+                exit(1);
+            }
         }
     }
-
+    else
+    {
+        string token = getToken(inputFile);
+        prev_token = token.length();
+        if (prev_token > 16)
+        {
+            inputFile.close();
+            __parseerror(3);
+        }
+        if (!isalpha(token[0]))
+        {
+            inputFile.close();
+            __parseerror(1);
+        }
+        if (token.length() > 1)
+        {
+            regex pattern("^[a-zA-Z]+$|^[0-9]+$");
+            if (!regex_match(token.substr(1), pattern))
+            {
+                cerr << "Syntax error: wrong symbol name pattern" << endl;
+                exit(1);
+            }
+            return token;
+        }
+        else
+        {
+            return token;
+        }
+    }
     return token;
 }
 
 char readIAER(ifstream &inputFile)
 {
-    string token = getToken(inputFile);
-    prev_token = token.length();
-    if (token.length() != 1)
+    string token;
+    if (line_changed > 0)
     {
-        cerr << "Syntax error: addrmode exceeds length 1" << endl;
-        exit(1);
+        token = getToken(inputFile);
+        prev_token = token.length();
+        if (token != "M" && token != "A" && token != "R" && token != "I" && token != "E")
+        {
+            if (inputFile.eof())
+            {
+                linenum -= line_changed + 1;
+                offset = prev_offset + 1;
+            }
+            inputFile.close();
+            __parseerror(2);
+        }
     }
-    if (token[0] != 'M' && token[0] != 'A' && token[0] != 'R' && token[0] != 'I' && token[0] != 'E')
+    else
     {
-        cerr << "Syntax error: invalid char" << endl;
-        exit(1);
+        token = getToken(inputFile);
+        prev_token = token.length();
+        if (token != "M" && token != "A" && token != "R" && token != "I" && token != "E")
+        {
+            inputFile.close();
+            __parseerror(2);
+        }
     }
     return token[0];
 }
@@ -248,49 +346,68 @@ void passOne(ifstream &inputFile)
         {
             return;
         }
+        if (defcount > 16)
+        {
+            inputFile.close();
+            __parseerror(4);
+        }
+        vector<string> deflist;
         for (int i = 0; i < defcount; i++)
         {
             string sym = readSym(inputFile);
             int val = readInt(inputFile);
-            symbolTable[sym] = val + new_module.baseAddress;
+
+            if (symbolTable.count(sym) > 0)
+            {
+                cout << "Warning: Module " << moduleBaseTable.size() + 1 << ": " << sym << " redefinition ignored" << endl;
+                symbolTable[sym].second = "Error: This variable is multiple times defined; first value used";
+            }
+            else
+            {
+                symbolTable[sym].first = val + new_module.baseAddress;
+                deflist.push_back(sym);
+            }
         }
 
         int usecount = readInt(inputFile);
+        if (usecount > 16)
+        {
+            inputFile.close();
+            __parseerror(5);
+        }
         for (int i = 0; i < usecount; i++)
         {
             string sym = readSym(inputFile);
         }
 
         int instcount = readInt(inputFile);
+        for (string sym : deflist)
+        {
+            if (symbolTable[sym].first - new_module.baseAddress > instcount - 1)
+            {
+                cout << "Warning: Module " << moduleBaseTable.size() + 1 << ": " << sym
+                     << " too big " << symbolTable[sym].first - new_module.baseAddress
+                     << " (max=" << instcount - 1 << ") assume zero relative" << endl;
+                symbolTable[sym].first = new_module.baseAddress;
+            }
+        }
         totalcode += instcount;
+        if (totalcode >= 512)
+        {
+            inputFile.close();
+            __parseerror(6);
+        }
         prev_length = instcount;
         for (int i = 0; i < instcount; i++)
         {
             char addrMode = readIAER(inputFile);
             int instruction = readInt(inputFile);
-            if ((instruction / 1000) >= 10)
-            {
-                cerr << "instruction opcode >= 10";
-            }
-            if (addrMode == 'A')
-            {
-                if ((instruction % 1000) >= 512)
-                {
-                    cerr << "instruction operand greater than machine size";
-                }
-            }
-            else if (addrMode == 'I')
-            {
-                if ((instruction % 1000) >= 900)
-                {
-                    cerr << "instruction operand greater than 900";
-                }
-            }
         }
         moduleBaseTable.push_back(new_module);
     }
     if (totalcode >= 512)
     {
+        inputFile.close();
         __parseerror(6);
     }
 }
@@ -329,6 +446,7 @@ void passTwo(ifstream &inputFile_new)
 
     for (int i = 0; i < moduleBaseTable.size(); i++)
     {
+        map<string, int> useused;
         int defcount = readInt(inputFile_new);
         vector<Symbol> deflist;
         for (int j = 0; j < defcount; j++)
@@ -352,37 +470,91 @@ void passTwo(ifstream &inputFile_new)
         int instcount = readInt(inputFile_new);
         for (int j = 0; j < instcount; j++)
         {
+            string error;
             char addrMode = readIAER(inputFile_new);
             int instruction = readInt(inputFile_new);
             int opcode = instruction / 1000;
             int oprand = instruction % 1000;
+            if (opcode >= 10)
+            {
+                error = "Error: Illegal opcode; treated as 9999";
+                instruction = 9999;
+                opcode = instruction / 1000;
+                oprand = instruction % 1000;
+            }
             if (addrMode == 'M')
             {
-                instruction = opcode * 1000 + moduleBaseTable[i].baseAddress;
+                if (oprand >= moduleBaseTable.size() && error.empty())
+                {
+                    error = "Error: Illegal module operand ; treated as module=0";
+                    instruction = opcode * 1000 + moduleBaseTable[0].baseAddress;
+                }
+                else
+                {
+                    instruction = opcode * 1000 + moduleBaseTable[oprand].baseAddress;
+                }
             }
             else if (addrMode == 'A')
             {
-                if (oprand >= 512)
+                if (oprand >= 512 && error.empty())
                 {
-                    cerr << "operand exceeding machine size" << endl;
+                    error = "Error: Absolute address exceeds machine size; zero used";
+                    instruction -= oprand;
                 }
             }
             else if (addrMode == 'R')
             {
-                instruction = moduleBaseTable[i].baseAddress + instruction;
+                if (oprand > (instcount - 1) && error.empty())
+                {
+                    error = "Error: Relative address exceeds module size; relative zero used";
+                    instruction -= oprand;
+                    instruction += moduleBaseTable[i].baseAddress;
+                }
+                else
+                {
+                    instruction = moduleBaseTable[i].baseAddress + instruction;
+                }
             }
             else if (addrMode == 'I')
             {
-                if (oprand >= 900)
+                if (oprand >= 900 && error.empty())
                 {
-                    cerr << "immediate address must be less than 900" << endl;
+                    error = "Error: Illegal immediate operand; treated as 999";
+                    instruction = opcode * 1000 + 999;
                 }
             }
             else
             {
-                instruction = opcode * 1000 + symbolTable[uselist[oprand]];
+                if (oprand >= uselist.size() && error.empty())
+                {
+                    error = "Error: External operand exceeds length of uselist; treated as relative=0";
+                    instruction -= oprand;
+                }
+                else if (symbolTable.count(uselist[oprand]) == 0 && error.empty())
+                {
+                    error = "Error: " + uselist[oprand] + " is not defined; zero used";
+                    instruction -= oprand;
+                    useused[uselist[oprand]] = oprand;
+                }
+                else
+                {
+                    instruction = opcode * 1000 + symbolTable[uselist[oprand]].first;
+                    useused[uselist[oprand]] = oprand;
+                }
             }
-            memory_map.push_back(instruction);
+            memory_map.push_back(make_pair(instruction, error));
+
+            cout << setw(3) << setfill('0') << memory_map.size() - 1;
+            cout << ": ";
+            cout << setw(4) << setfill('0') << memory_map.back().first;
+            cout << " " << memory_map.back().second << endl;
+        }
+        for (int j = 0; j < moduleBaseTable[i].useList.size(); j++)
+        {
+            if (useused.count(moduleBaseTable[i].useList[j]) == 0)
+            {
+                cout << "Warning: Module " << i + 1 << ": uselist[" << j << "]=" << moduleBaseTable[i].useList[j] << " was not used" << endl;
+            }
         }
     }
 }
@@ -424,24 +596,25 @@ int main(int argc, char *argv[])
     passOne(inputFile);
     printSymboltable();
     inputFile.close();
-    prev_token = 0;
-    linenum = 1;
+    // prev_token = 0;
+    // linenum = 1;
 
     ifstream inputFile_new(argv[1]);
     if (!inputFile_new.is_open())
     {
         cerr << "Error: Unable to open file " << argv[1] << endl;
     }
-
+    cout << "Memory Map" << endl;
     passTwo(inputFile_new);
-    printMemorymap();
     checkUnusedvar();
+
     // string token;
     // while (!(token = getToken(inputFile_new)).empty())
     // {
     //     cout << "Token: " << token << " linenum: " << linenum << " offset: " << offset << endl;
     //     prev_token = token.length();
     // }
+
     inputFile_new.close();
     return 0;
 }
