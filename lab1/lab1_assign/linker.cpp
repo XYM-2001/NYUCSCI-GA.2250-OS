@@ -91,16 +91,6 @@ void printSymboltable()
     }
 }
 
-void printMemorymap()
-{
-    cout << "Memory Map" << endl;
-    for (int i = 0; i < memory_map.size(); i++)
-    {
-        cout << setw(3) << setfill('0') << i;
-        cout << ": " << memory_map[i].first << " " << memory_map[i].second << endl;
-    }
-}
-
 Symbol createSymbol(string symbolname, int val)
 {
     Symbol out;
