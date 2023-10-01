@@ -439,36 +439,6 @@ void passOne(ifstream &inputFile)
 
 void passTwo(ifstream &inputFile_new)
 {
-    // for (int i = 0; i < moduleBaseTable.size(); i++)
-    // {
-    //     int defcount = readInt(inputFile_new);
-    //     cout << defcount << " ";
-    //     for (int j = 0; j < defcount; j++)
-    //     {
-    //         string sym = readSym(inputFile_new);
-    //         int val = readInt(inputFile_new);
-    //         cout << sym << " " << val << " ";
-    //     }
-    //     cout << endl;
-    //     int usecount = readInt(inputFile_new);
-    //     cout << usecount << " ";
-    //     for (int j = 0; j < usecount; j++)
-    //     {
-    //         string sym = readSym(inputFile_new);
-    //         cout << sym << " ";
-    //     }
-    //     cout << endl;
-    //     int instcount = readInt(inputFile_new);
-    //     cout << instcount << " ";
-    //     for (int j = 0; j < instcount; j++)
-    //     {
-    //         char addrMode = readIAER(inputFile_new);
-    //         int instruction = readInt(inputFile_new);
-    //         cout << addrMode << " " << instruction << " ";
-    //     }
-    //     cout << endl;
-    // }
-
     for (int i = 0; i < moduleBaseTable.size(); i++)
     {
         map<string, int> useused;
@@ -615,6 +585,7 @@ int main(int argc, char *argv[])
 
     passOne(inputFile);
     printSymboltable();
+    cout << endl;
     inputFile.close();
 
     ifstream inputFile_new(argv[1]);
@@ -626,7 +597,7 @@ int main(int argc, char *argv[])
     cout << "Memory Map" << endl;
     passTwo(inputFile_new);
     checkUnusedvar();
-
+    cout << endl;
     inputFile_new.close();
     return 0;
 }
