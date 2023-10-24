@@ -288,6 +288,45 @@ private:
     int quantum;
 };
 
+class PRIO_Scheduler : public Scheduler
+{
+public:
+    PRIO_Scheduler(int quantum)
+    {
+        this->quantum = quantum;
+    }
+    string toString() override
+    {
+        return ("PRIO" + to_string(this->quantum));
+    }
+
+    // Implement the interface functions
+    void addrunQ(Process *process) override
+    {
+        runQueue.push_back(process);
+    }
+
+    Process *getNextProcess() override
+    {
+        if (!runQueue.empty())
+        {
+            Process *nextProcess = runQueue.front();
+            runQueue.pop_front();
+            return nextProcess;
+        }
+        return nullptr;
+    }
+
+    int getQuantum() override
+    {
+        return quantum;
+    }
+
+private:
+    list<Process *> runQueue;
+    int quantum;
+};
+
 Process *CURRENT_RUNNING_PROCESS = nullptr;
 Scheduler *scheduler;
 list<Event *> eventQueue;
@@ -391,62 +430,34 @@ void Simulation()
             break;
         case TRANS_TO_RUN:
             // create event for either preemption or blocking
-            if (proc->cpu_burst != 0)
+            if (proc->cpu_burst == 0)
             {
-                if (proc->cpu_burst <= quantum)
-                {
-                    proc->state_ts = proc->cpu_burst;
-                }
-                else
-                {
-                    proc->state_ts = quantum;
-                }
-                if ((proc->rem - proc->state_ts) <= 0)
-                {
-                    proc->cpu_burst = proc->rem;
-                    proc->state_ts = proc->rem;
-                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
-                    evt = new Event(CURRENT_TIME + proc->state_ts, proc, DONE);
-                }
-                else if (proc->state_ts < proc->cpu_burst)
-                {
-                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
-                    evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_READY);
-                }
-                else
-                {
-                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
-                    evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_BLOCK);
-                }
+                proc->cpu_burst = myrandom(proc->cb);
+            }
+            if (proc->cpu_burst <= quantum)
+            {
+                proc->state_ts = proc->cpu_burst;
             }
             else
             {
-                proc->cpu_burst = myrandom(proc->cb);
-                if (proc->cpu_burst <= quantum)
-                {
-                    proc->state_ts = proc->cpu_burst;
-                }
-                else
-                {
-                    proc->state_ts = quantum;
-                }
-                if ((proc->rem - proc->state_ts) <= 0)
-                {
-                    proc->cpu_burst = proc->rem;
-                    proc->state_ts = proc->rem;
-                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
-                    evt = new Event(CURRENT_TIME + proc->state_ts, proc, DONE);
-                }
-                else if (proc->state_ts < proc->cpu_burst)
-                {
-                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
-                    evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_READY);
-                }
-                else
-                {
-                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
-                    evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_BLOCK);
-                }
+                proc->state_ts = quantum;
+            }
+            if ((proc->rem - proc->state_ts) <= 0)
+            {
+                proc->cpu_burst = proc->rem;
+                proc->state_ts = proc->rem;
+                cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                evt = new Event(CURRENT_TIME + proc->state_ts, proc, DONE);
+            }
+            else if (proc->state_ts < proc->cpu_burst)
+            {
+                cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_READY);
+            }
+            else
+            {
+                cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_BLOCK);
             }
             if (proc->state == READY)
             {
@@ -600,10 +611,13 @@ int main(int argc, char *argv[])
     }
     else if (schedspec[0] == 'R')
     {
-        scheduler = new RR_Scheduler(stoi(schedspec.substr(2)));
+        scheduler = new RR_Scheduler(stoi(schedspec.substr(1)));
     }
     else if (schedspec[0] == 'P')
     {
+        size_t colonPos = schedspec.find(':');
+        maxprio = stoi(schedspec.substr(colonPos + 1));
+        scheduler = new PRIO_Scheduler(stoi(schedspec.substr(1, colonPos - 1)));
     }
     else if (schedspec[0] == 'E')
     {
