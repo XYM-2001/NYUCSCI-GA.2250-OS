@@ -65,16 +65,16 @@ int myrandom(int burst)
 class Process
 {
 public:
-    int pid;          // Process ID
-    int at;           // Arrival Time
-    int tc;           // Total CPU Time
-    int cb;           // CPU Burst
-    int io;           // IO Burst
-    int static_prio;  // Static Priority
-    int dynamic_prio; // Dynamic Priority
-    int cpu_burst;    // cpu burst
-    int io_burst;     // io burst
-    int state_ts;
+    int pid;           // Process ID
+    int at;            // Arrival Time
+    int tc;            // Total CPU Time
+    int cb;            // CPU Burst
+    int io;            // IO Burst
+    int static_prio;   // Static Priority
+    int dynamic_prio;  // Dynamic Priority
+    int cpu_burst = 0; // cpu burst
+    int io_burst = 0;  // io burst
+    int state_ts = 0;
     int rem;
     int ft;
     int ready;
@@ -258,7 +258,7 @@ public:
     }
     string toString() override
     {
-        return "RR" + quantum;
+        return ("RR" + to_string(this->quantum));
     }
 
     // Implement the interface functions
@@ -346,6 +346,7 @@ int get_next_event_time()
 void Simulation()
 {
     Event *evt;
+    int quantum = scheduler->getQuantum();
     while ((evt = get_event()))
     {
         Process *proc = evt->process;
@@ -374,12 +375,13 @@ void Simulation()
             {
                 proc->cpu_burst -= proc->state_ts;
                 proc->rem -= proc->state_ts;
-                proc->state_ts = 0;
                 cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                CURRENT_RUNNING_PROCESS = nullptr;
             }
-            scheduler->addrunQ(proc);
             proc->state = READY;
             proc->ready = CURRENT_TIME;
+            proc->state_ts = 0;
+            scheduler->addrunQ(proc);
             CALL_SCHEDULER = true;
             break;
         case TRANS_TO_PREEMPT:
@@ -389,7 +391,6 @@ void Simulation()
             break;
         case TRANS_TO_RUN:
             // create event for either preemption or blocking
-            int quantum = scheduler->getQuantum();
             if (proc->cpu_burst != 0)
             {
                 if (proc->cpu_burst <= quantum)
@@ -436,6 +437,11 @@ void Simulation()
                     cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
                     evt = new Event(CURRENT_TIME + proc->state_ts, proc, DONE);
                 }
+                else if (proc->state_ts < proc->cpu_burst)
+                {
+                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                    evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_READY);
+                }
                 else
                 {
                     cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
@@ -452,6 +458,7 @@ void Simulation()
         case TRANS_TO_BLOCK:
             // create an event for when process becomes READY again
             proc->rem -= proc->state_ts;
+            proc->cpu_burst -= proc->state_ts;
             proc->io_burst = myrandom(proc->io);
             cout << stateToString[proc->state] << " -> BLOCK ib=" << proc->io_burst << " rem=" << proc->rem;
             proc->it += proc->io_burst;
@@ -593,7 +600,7 @@ int main(int argc, char *argv[])
     }
     else if (schedspec[0] == 'R')
     {
-        scheduler = new RR_Scheduler(stoi(schedspec.substr(1)));
+        scheduler = new RR_Scheduler(stoi(schedspec.substr(2)));
     }
     else if (schedspec[0] == 'P')
     {
