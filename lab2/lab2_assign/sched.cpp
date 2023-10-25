@@ -293,28 +293,57 @@ class PRIO_Scheduler : public Scheduler
 public:
     PRIO_Scheduler(int quantum)
     {
+        activeQ.resize(maxprio);
+        expiredQ.resize(maxprio);
         this->quantum = quantum;
     }
     string toString() override
     {
-        return ("PRIO" + to_string(this->quantum));
+        return ("PRIO " + to_string(this->quantum));
     }
 
-    // Implement the interface functions
+    // Implement the addrunQ function
     void addrunQ(Process *process) override
     {
-        runQueue.push_back(process);
+        // Add the process to the activeQ based on its dynamic priority
+        process->dynamic_prio--;
+        if (process->dynamic_prio < 0)
+        {
+            process->dynamic_prio = process->static_prio - 1;
+            expiredQ[process->dynamic_prio].push_back(process);
+        }
+        else
+        {
+            activeQ[process->dynamic_prio].push_back(process);
+        }
     }
 
+    // Implement the getNextProcess function
     Process *getNextProcess() override
     {
-        if (!runQueue.empty())
+        // Iterate through the activeQ and find the first non-empty list with the highest priority
+        for (int priority = maxprio - 1; priority >= 0; priority--)
         {
-            Process *nextProcess = runQueue.front();
-            runQueue.pop_front();
-            return nextProcess;
+            if (!activeQ[priority].empty())
+            {
+                Process *nextProcess = activeQ[priority].front();
+                activeQ[priority].pop_front();
+                return nextProcess;
+            }
         }
-        return nullptr;
+
+        // If activeQ is empty, swap activeQ and expiredQ and return the first non-empty list from activeQ
+        activeQ.swap(expiredQ);
+        for (int priority = maxprio - 1; priority >= 0; priority--)
+        {
+            if (!activeQ[priority].empty())
+            {
+                Process *nextProcess = activeQ[priority].front();
+                activeQ[priority].pop_front();
+                return nextProcess;
+            }
+        }
+        return nullptr; // If both queues are empty, return nullptr
     }
 
     int getQuantum() override
@@ -323,7 +352,7 @@ public:
     }
 
 private:
-    list<Process *> runQueue;
+    vector<list<Process *>> activeQ, expiredQ;
     int quantum;
 };
 
@@ -405,6 +434,7 @@ void Simulation()
             {
                 proc->io_burst = 0;
                 block_num -= 1;
+                proc->dynamic_prio = proc->static_prio;
                 if (block_num == 0)
                 {
                     totalb += CURRENT_TIME - block_time;
@@ -414,8 +444,12 @@ void Simulation()
             {
                 proc->cpu_burst -= proc->state_ts;
                 proc->rem -= proc->state_ts;
-                cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                cout << " cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
                 CURRENT_RUNNING_PROCESS = nullptr;
+            }
+            else
+            {
+                proc->dynamic_prio += 1;
             }
             proc->state = READY;
             proc->ready = CURRENT_TIME;
@@ -616,7 +650,10 @@ int main(int argc, char *argv[])
     else if (schedspec[0] == 'P')
     {
         size_t colonPos = schedspec.find(':');
-        maxprio = stoi(schedspec.substr(colonPos + 1));
+        if (colonPos != string::npos)
+        {
+            maxprio = stoi(schedspec.substr(colonPos + 1));
+        }
         scheduler = new PRIO_Scheduler(stoi(schedspec.substr(1, colonPos - 1)));
     }
     else if (schedspec[0] == 'E')
