@@ -478,7 +478,7 @@ public:
             }
 
             CURRENT_RUNNING_PROCESS->state_ts -= ((*it)->timestamp - CURRENT_TIME);
-            activeQ[p->dynamic_prio].pop_back();
+            // activeQ[p->dynamic_prio].pop_back();
             delete *it;
             eventQueue.erase(it);
         }
@@ -586,16 +586,6 @@ void Simulation()
                     totalb += CURRENT_TIME - block_time;
                 }
             }
-            else if (proc->state == RUNNING)
-            {
-                proc->cpu_burst -= proc->state_ts;
-                proc->rem -= proc->state_ts;
-                if (verbose)
-                {
-                    cout << " cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
-                }
-                CURRENT_RUNNING_PROCESS = nullptr;
-            }
             else
             {
                 proc->dynamic_prio += 1;
@@ -606,7 +596,7 @@ void Simulation()
                 bool preempt = scheduler->test_preempt(proc);
                 if (preempt)
                 {
-                    evt = new Event(CURRENT_TIME, proc, TRANS_TO_PREEMPT);
+                    evt = new Event(CURRENT_TIME, CURRENT_RUNNING_PROCESS, TRANS_TO_PREEMPT);
                     eventQueue.push_front(evt);
                 }
             }
@@ -618,18 +608,19 @@ void Simulation()
         case TRANS_TO_PREEMPT:
             // must come from RUNNING (preemption)
             // add to runqueue (no event is generated)
-            evt = new Event(CURRENT_TIME, proc, TRANS_TO_RUN);
-            eventQueue.push_front(evt);
-            CURRENT_RUNNING_PROCESS->cpu_burst -= CURRENT_RUNNING_PROCESS->state_ts;
-            CURRENT_RUNNING_PROCESS->rem -= CURRENT_RUNNING_PROCESS->state_ts;
-            scheduler->addrunQ(CURRENT_RUNNING_PROCESS);
-            CURRENT_RUNNING_PROCESS->state = READY;
-            CURRENT_RUNNING_PROCESS->ready = CURRENT_TIME;
-            CURRENT_RUNNING_PROCESS->state_ts = 0;
-            CURRENT_RUNNING_PROCESS = proc;
-            // evt = new Event(CURRENT_TIME, CURRENT_RUNNING_PROCESS, TRANS_TO_READY);
-            // eventQueue.push_front(evt);
-            CALL_SCHEDULER = false;
+            proc->cpu_burst -= proc->state_ts;
+            proc->rem -= proc->state_ts;
+            if (verbose)
+            {
+                cout << stateToString[proc->state] << " -> READY";
+                cout << " cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+            }
+            scheduler->addrunQ(proc);
+            CURRENT_RUNNING_PROCESS = nullptr;
+            proc->state = READY;
+            proc->ready = CURRENT_TIME;
+            proc->state_ts = 0;
+            CALL_SCHEDULER = true;
             break;
         case TRANS_TO_RUN:
             // create event for either preemption or blocking
@@ -663,7 +654,7 @@ void Simulation()
                     cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
                 }
 
-                evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_READY);
+                evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_PREEMPT);
             }
             else
             {
