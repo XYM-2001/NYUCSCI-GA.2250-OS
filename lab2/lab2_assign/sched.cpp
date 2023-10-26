@@ -22,6 +22,10 @@ bool CALL_SCHEDULER = false;
 int block_num = 0;
 int totalb = 0;
 int block_time = 0;
+bool verbose = false;
+bool trace = false;
+bool error = false;
+bool process = false;
 
 // Define process states using an enumeration
 enum ProcessState
@@ -450,26 +454,40 @@ public:
     {
         if (CURRENT_RUNNING_PROCESS == nullptr)
         {
-            return true;
+            return false;
         }
-        cout << endl;
-        cout << " --> PrioPreempt Cond1=";
         bool cond1 = p->dynamic_prio > CURRENT_RUNNING_PROCESS->dynamic_prio;
-        cout << cond1 << " Cond2=";
         auto it = eventQueue.begin();
         while (it != eventQueue.end() && ((*it)->process->pid != CURRENT_RUNNING_PROCESS->pid))
         {
             ++it;
         }
         bool cond2 = (*it)->timestamp > CURRENT_TIME;
-        cout << cond2 << " (" << (*it)->timestamp - CURRENT_TIME << ") --> ";
+        if (verbose)
+        {
+            cout << endl;
+            cout << " --> PrioPreempt Cond1=";
+            cout << cond1 << " Cond2=";
+            cout << cond2 << " (" << (*it)->timestamp - CURRENT_TIME << ") --> ";
+        }
         if (cond1 && cond2)
         {
-            cout << "YES";
+            if (verbose)
+            {
+                cout << "YES";
+            }
+
+            CURRENT_RUNNING_PROCESS->state_ts -= ((*it)->timestamp - CURRENT_TIME);
+            activeQ[p->dynamic_prio].pop_back();
+            delete *it;
+            eventQueue.erase(it);
         }
         else
         {
-            cout << "NO";
+            if (verbose)
+            {
+                cout << "NO";
+            }
         }
         return (cond1 && cond2);
     }
@@ -544,13 +562,20 @@ void Simulation()
         int timeInPrevState = CURRENT_TIME - proc->state_ts;
         delete evt;
         evt = nullptr;
-        cout << CURRENT_TIME << " " << proc->pid << " " << proc->state_ts << ": ";
+        if (verbose)
+        {
+            cout << CURRENT_TIME << " " << proc->pid << " " << proc->state_ts << ": ";
+        }
+
         switch (transition)
         {
         case TRANS_TO_READY:
             // must come from BLOCKED or CREATED
             // add to run queue, no event created
-            cout << stateToString[proc->state] << " -> READY";
+            if (verbose)
+            {
+                cout << stateToString[proc->state] << " -> READY";
+            }
             if (proc->state == BLOCKED)
             {
                 proc->io_burst = 0;
@@ -565,13 +590,17 @@ void Simulation()
             {
                 proc->cpu_burst -= proc->state_ts;
                 proc->rem -= proc->state_ts;
-                cout << " cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                if (verbose)
+                {
+                    cout << " cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                }
                 CURRENT_RUNNING_PROCESS = nullptr;
             }
             else
             {
                 proc->dynamic_prio += 1;
             }
+            scheduler->addrunQ(proc);
             if (proc->state == BLOCKED || proc->state == CREATED)
             {
                 bool preempt = scheduler->test_preempt(proc);
@@ -579,16 +608,11 @@ void Simulation()
                 {
                     evt = new Event(CURRENT_TIME, proc, TRANS_TO_PREEMPT);
                     eventQueue.push_front(evt);
-                    proc->state = READY;
-                    proc->ready = CURRENT_TIME;
-                    proc->state_ts = 0;
-                    break;
                 }
             }
             proc->state = READY;
             proc->ready = CURRENT_TIME;
             proc->state_ts = 0;
-            scheduler->addrunQ(proc);
             CALL_SCHEDULER = true;
             break;
         case TRANS_TO_PREEMPT:
@@ -596,9 +620,16 @@ void Simulation()
             // add to runqueue (no event is generated)
             evt = new Event(CURRENT_TIME, proc, TRANS_TO_RUN);
             eventQueue.push_front(evt);
-            evt = new Event(CURRENT_TIME, CURRENT_RUNNING_PROCESS, TRANS_TO_READY);
-            eventQueue.push_front(evt);
-            CALL_SCHEDULER = true;
+            CURRENT_RUNNING_PROCESS->cpu_burst -= CURRENT_RUNNING_PROCESS->state_ts;
+            CURRENT_RUNNING_PROCESS->rem -= CURRENT_RUNNING_PROCESS->state_ts;
+            scheduler->addrunQ(CURRENT_RUNNING_PROCESS);
+            CURRENT_RUNNING_PROCESS->state = READY;
+            CURRENT_RUNNING_PROCESS->ready = CURRENT_TIME;
+            CURRENT_RUNNING_PROCESS->state_ts = 0;
+            CURRENT_RUNNING_PROCESS = proc;
+            // evt = new Event(CURRENT_TIME, CURRENT_RUNNING_PROCESS, TRANS_TO_READY);
+            // eventQueue.push_front(evt);
+            CALL_SCHEDULER = false;
             break;
         case TRANS_TO_RUN:
             // create event for either preemption or blocking
@@ -618,17 +649,29 @@ void Simulation()
             {
                 proc->cpu_burst = proc->rem;
                 proc->state_ts = proc->rem;
-                cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                if (verbose)
+                {
+                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                }
+
                 evt = new Event(CURRENT_TIME + proc->state_ts, proc, DONE);
             }
             else if (proc->state_ts < proc->cpu_burst)
             {
-                cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                if (verbose)
+                {
+                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                }
+
                 evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_READY);
             }
             else
             {
-                cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                if (verbose)
+                {
+                    cout << stateToString[proc->state] << " -> RUNNG cb=" << proc->cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+                }
+
                 evt = new Event(CURRENT_TIME + proc->state_ts, proc, TRANS_TO_BLOCK);
             }
             if (proc->state == READY)
@@ -643,7 +686,10 @@ void Simulation()
             proc->rem -= proc->state_ts;
             proc->cpu_burst -= proc->state_ts;
             proc->io_burst = myrandom(proc->io);
-            cout << stateToString[proc->state] << " -> BLOCK ib=" << proc->io_burst << " rem=" << proc->rem;
+            if (verbose)
+            {
+                cout << stateToString[proc->state] << " -> BLOCK ib=" << proc->io_burst << " rem=" << proc->rem;
+            }
             proc->it += proc->io_burst;
             if (proc->state == READY)
             {
@@ -665,7 +711,11 @@ void Simulation()
             proc->rem -= proc->state_ts;
             proc->ft = CURRENT_TIME;
             CURRENT_RUNNING_PROCESS = nullptr;
-            cout << "Done";
+            if (verbose)
+            {
+                cout << "Done";
+            }
+
             CALL_SCHEDULER = true;
             break;
         }
@@ -673,7 +723,10 @@ void Simulation()
         {
             if (get_next_event_time() == CURRENT_TIME)
             {
-                cout << endl;
+                if (verbose)
+                {
+                    cout << endl;
+                }
                 continue; // process next event from Event queue
             }
             CALL_SCHEDULER = false;
@@ -682,7 +735,11 @@ void Simulation()
                 CURRENT_RUNNING_PROCESS = scheduler->getNextProcess();
                 if (CURRENT_RUNNING_PROCESS == nullptr)
                 {
-                    cout << endl;
+                    if (verbose)
+                    {
+                        cout << endl;
+                    }
+
                     continue;
                 }
                 // create event to make this process runnable for same time.
@@ -690,7 +747,10 @@ void Simulation()
                 add_event(evt);
             }
         }
-        cout << endl;
+        if (verbose)
+        {
+            cout << endl;
+        }
     }
 }
 
@@ -698,10 +758,6 @@ int main(int argc, char *argv[])
 {
     // Parse command line arguments and open input and rand files
     int opt;
-    bool verbose = false;
-    bool trace = false;
-    bool error = false;
-    bool process = false;
     string schedspec;
     string inputfile;
     string randfile;
@@ -729,7 +785,7 @@ int main(int argc, char *argv[])
             schedspec = optarg; // optarg contains the value following -s
             break;
         default:
-            std::cerr << "Error: Unknown option or invalid usage." << std::endl;
+            cerr << "Error: Unknown option or invalid usage." << endl;
             return 1; // Return an error code for unknown options
         }
     }
@@ -742,17 +798,9 @@ int main(int argc, char *argv[])
     }
     else
     {
-        std::cerr << "Error: Missing input file and/or rand file." << std::endl;
+        cerr << "Error: Missing input file and/or rand file." << endl;
         return 1; // Return an error code for missing input files
     }
-
-    // // std::cout << "Verbose: " << verbose << std::endl;
-    // // std::cout << "Trace: " << trace << std::endl;
-    // // std::cout << "Error: " << error << std::endl;
-    // // std::cout << "Process: " << process << std::endl;
-    // // std::cout << "Scheduler Spec: " << schedspec << std::endl;
-    // // std::cout << "Input File: " << inputfile << std::endl;
-    // // std::cout << "Rand File: " << randfile << std::endl;
 
     ifstream randFile(randfile);
     int num;
