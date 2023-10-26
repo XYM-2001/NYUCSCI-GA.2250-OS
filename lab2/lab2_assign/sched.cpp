@@ -106,7 +106,6 @@ public:
     int timestamp;         // Event Timestamp
     Process *process;      // Associated Process
     Transition transition; // State Transition
-    int burst;
 
     // Constructor to initialize an event
     Event(int timestamp, Process *process, Transition transition)
@@ -114,9 +113,11 @@ public:
         this->timestamp = timestamp;
         this->process = process;
         this->transition = transition;
-        this->burst = 0;
     }
 };
+
+Process *CURRENT_RUNNING_PROCESS = nullptr;
+list<Event *> eventQueue;
 
 class Scheduler
 {
@@ -125,6 +126,7 @@ public:
     virtual void addrunQ(Process *process) = 0;
     virtual string toString() = 0;
     virtual int getQuantum() = 0;
+    virtual bool test_preempt(Process *p) = 0;
 };
 
 class FCFS_Scheduler : public Scheduler
@@ -155,6 +157,11 @@ public:
     int getQuantum() override
     {
         return 10000;
+    }
+
+    bool test_preempt(Process *p) override
+    {
+        return false;
     }
 
 private:
@@ -189,6 +196,11 @@ public:
     int getQuantum() override
     {
         return 10000;
+    }
+
+    bool test_preempt(Process *p) override
+    {
+        return false;
     }
 
 private:
@@ -245,6 +257,11 @@ public:
         return 10000;
     }
 
+    bool test_preempt(Process *p) override
+    {
+        return false;
+    }
+
 private:
     list<Process *> runQueue;
 };
@@ -281,6 +298,11 @@ public:
     int getQuantum() override
     {
         return quantum;
+    }
+
+    bool test_preempt(Process *p) override
+    {
+        return false;
     }
 
 private:
@@ -351,14 +373,113 @@ public:
         return quantum;
     }
 
+    bool test_preempt(Process *p) override
+    {
+        return false;
+    }
+
 private:
     vector<list<Process *>> activeQ, expiredQ;
     int quantum;
 };
 
-Process *CURRENT_RUNNING_PROCESS = nullptr;
+class PREPRIO_Scheduler : public Scheduler
+{
+public:
+    PREPRIO_Scheduler(int quantum)
+    {
+        activeQ.resize(maxprio);
+        expiredQ.resize(maxprio);
+        this->quantum = quantum;
+    }
+    string toString() override
+    {
+        return ("PREPRIO " + to_string(this->quantum));
+    }
+
+    // Implement the addrunQ function
+    void addrunQ(Process *process) override
+    {
+        // Add the process to the activeQ based on its dynamic priority
+        process->dynamic_prio--;
+        if (process->dynamic_prio < 0)
+        {
+            process->dynamic_prio = process->static_prio - 1;
+            expiredQ[process->dynamic_prio].push_back(process);
+        }
+        else
+        {
+            activeQ[process->dynamic_prio].push_back(process);
+        }
+    }
+
+    // Implement the getNextProcess function
+    Process *getNextProcess() override
+    {
+        // Iterate through the activeQ and find the first non-empty list with the highest priority
+        for (int priority = maxprio - 1; priority >= 0; priority--)
+        {
+            if (!activeQ[priority].empty())
+            {
+                Process *nextProcess = activeQ[priority].front();
+                activeQ[priority].pop_front();
+                return nextProcess;
+            }
+        }
+
+        // If activeQ is empty, swap activeQ and expiredQ and return the first non-empty list from activeQ
+        activeQ.swap(expiredQ);
+        for (int priority = maxprio - 1; priority >= 0; priority--)
+        {
+            if (!activeQ[priority].empty())
+            {
+                Process *nextProcess = activeQ[priority].front();
+                activeQ[priority].pop_front();
+                return nextProcess;
+            }
+        }
+        return nullptr; // If both queues are empty, return nullptr
+    }
+
+    int getQuantum() override
+    {
+        return quantum;
+    }
+
+    bool test_preempt(Process *p) override
+    {
+        if (CURRENT_RUNNING_PROCESS == nullptr)
+        {
+            return true;
+        }
+        cout << endl;
+        cout << " --> PrioPreempt Cond1=";
+        bool cond1 = p->dynamic_prio > CURRENT_RUNNING_PROCESS->dynamic_prio;
+        cout << cond1 << " Cond2=";
+        auto it = eventQueue.begin();
+        while (it != eventQueue.end() && ((*it)->process->pid != CURRENT_RUNNING_PROCESS->pid))
+        {
+            ++it;
+        }
+        bool cond2 = (*it)->timestamp > CURRENT_TIME;
+        cout << cond2 << " (" << (*it)->timestamp - CURRENT_TIME << ") --> ";
+        if (cond1 && cond2)
+        {
+            cout << "YES";
+        }
+        else
+        {
+            cout << "NO";
+        }
+        return (cond1 && cond2);
+    }
+
+private:
+    vector<list<Process *>> activeQ, expiredQ;
+    int quantum;
+};
+
 Scheduler *scheduler;
-list<Event *> eventQueue;
 queue<Process *> res;
 
 void add_event(Event *evt)
@@ -451,6 +572,19 @@ void Simulation()
             {
                 proc->dynamic_prio += 1;
             }
+            if (proc->state == BLOCKED || proc->state == CREATED)
+            {
+                bool preempt = scheduler->test_preempt(proc);
+                if (preempt)
+                {
+                    evt = new Event(CURRENT_TIME, proc, TRANS_TO_PREEMPT);
+                    eventQueue.push_front(evt);
+                    proc->state = READY;
+                    proc->ready = CURRENT_TIME;
+                    proc->state_ts = 0;
+                    break;
+                }
+            }
             proc->state = READY;
             proc->ready = CURRENT_TIME;
             proc->state_ts = 0;
@@ -460,6 +594,10 @@ void Simulation()
         case TRANS_TO_PREEMPT:
             // must come from RUNNING (preemption)
             // add to runqueue (no event is generated)
+            evt = new Event(CURRENT_TIME, proc, TRANS_TO_RUN);
+            eventQueue.push_front(evt);
+            evt = new Event(CURRENT_TIME, CURRENT_RUNNING_PROCESS, TRANS_TO_READY);
+            eventQueue.push_front(evt);
             CALL_SCHEDULER = true;
             break;
         case TRANS_TO_RUN:
@@ -658,6 +796,12 @@ int main(int argc, char *argv[])
     }
     else if (schedspec[0] == 'E')
     {
+        size_t colonPos = schedspec.find(':');
+        if (colonPos != string::npos)
+        {
+            maxprio = stoi(schedspec.substr(colonPos + 1));
+        }
+        scheduler = new PREPRIO_Scheduler(stoi(schedspec.substr(1, colonPos - 1)));
     }
     else
     {
