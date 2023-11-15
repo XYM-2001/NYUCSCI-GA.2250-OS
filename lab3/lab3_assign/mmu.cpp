@@ -24,7 +24,10 @@ typedef struct
     unsigned int frame_number : 7;  // 7 bits for the number of the physical frame (assuming 128 frames)
 
     // Use the remaining bits (20 bits) for custom usage
-    unsigned int custom_bits : 20;
+    unsigned int file_mapped : 1;
+    unsigned int valid_vma : 1;
+    unsigned int searched : 1;
+    unsigned int custom_bits : 18;
 } pte_t;
 
 // Constructor for pte_t
@@ -37,6 +40,10 @@ pte_t new_PTE()
     newPTE.write_protect = 0;
     newPTE.paged_out = 0;
     newPTE.frame_number = 0;
+
+    newPTE.searched = 0;
+    newPTE.valid_vma = 0;
+    newPTE.file_mapped = 0;
     newPTE.custom_bits = 0;
     return newPTE;
 }
@@ -65,10 +72,6 @@ public:
     pte_t page_table[MAX_VPAGES];
 };
 
-frame_t frame_table[MAX_FRAMES];
-vector<Process *> processes;
-Process *current_process = nullptr;
-
 // Define a class for the pager (base class for replacement algorithms)
 class Pager
 {
@@ -76,13 +79,40 @@ public:
     virtual frame_t *select_victim_frame() = 0;
 };
 
-// frame_t *get_frame()
-// {
-//     frame_t *frame = allocate_frame_from_free_list();
-//     if (frame == NULL)
-//         frame = THE_PAGER->select_victim_frame();
-//     return frame;
-// }
+class FIFO_Pager : public Pager
+{
+public:
+    frame_t *select_victim_frame() override
+    {
+    }
+};
+
+frame_t frame_table[MAX_FRAMES];
+vector<Process *> processes;
+Process *current_process = nullptr;
+Pager *THE_PAGER;
+
+frame_t *allocate_frame_from_free_list()
+{
+}
+
+frame_t *get_frame()
+{
+    frame_t *frame = allocate_frame_from_free_list();
+    if (frame == NULL)
+        frame = THE_PAGER->select_victim_frame();
+    return frame;
+}
+
+void pgfault_handler(pte_t *pte)
+{
+    if (!pte->searched)
+    {
+        for (auto vma : current_process->vmas)
+        {
+        }
+    }
+}
 
 void Simulation(ifstream &inputFile)
 {
@@ -100,10 +130,31 @@ void Simulation(ifstream &inputFile)
         istringstream iss(line);
         iss >> operation >> vpage;
         cout << ins << ": ==> " << operation << " " << vpage << endl;
+        // handle special case of “c” and “e” instruction
+        // now the real instructions for read and write
         if (operation == 'c')
         {
             current_process = processes[vpage];
+            for (auto vma : current_process->vmas)
+            {
+                for (int i = vma->starting_virtual_page; i <= vma->ending_virtual_page; i++)
+                {
+                    current_process->page_table[i].write_protect = vma->write_protected;
+                    current_process->page_table[i].file_mapped = vma->filemapped;
+                }
+            }
         }
+        pte_t *pte = &current_process->page_table[vpage];
+        if (!pte->present)
+        {
+            // this in reality generates the page fault exception and now you execute
+            // verify this is actually a valid page in a vma if not raise error and next inst
+            frame_t *newframe = get_frame();
+            //-> figure out if/what to do with old frame if it was mapped
+            // see general outline in MM-slides under Lab3 header and writeup below
+            // see whether and how to bring in the content of the access page.
+        }
+
         ins++;
     }
     return;
@@ -219,5 +270,6 @@ int main(int argc, char *argv[])
     processes.clear();
     Simulation(inputFile);
     inputFile.close();
+    delete THE_PAGER;
     return 0;
 }
