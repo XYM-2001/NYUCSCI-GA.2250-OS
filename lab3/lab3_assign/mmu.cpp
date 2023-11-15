@@ -104,13 +104,19 @@ frame_t *get_frame()
     return frame;
 }
 
-void pgfault_handler(pte_t *pte)
+void pgfault_handler(pte_t *pte, int vpage)
 {
     if (!pte->searched)
     {
         for (auto vma : current_process->vmas)
         {
+            if (vpage >= vma->starting_virtual_page && vpage <= vma->ending_virtual_page)
+            {
+                pte->valid_vma = 1;
+                break;
+            }
         }
+        pte->searched = 1;
     }
 }
 
@@ -147,6 +153,7 @@ void Simulation(ifstream &inputFile)
         pte_t *pte = &current_process->page_table[vpage];
         if (!pte->present)
         {
+            pgfault_handler(pte, vpage);
             // this in reality generates the page fault exception and now you execute
             // verify this is actually a valid page in a vma if not raise error and next inst
             frame_t *newframe = get_frame();
