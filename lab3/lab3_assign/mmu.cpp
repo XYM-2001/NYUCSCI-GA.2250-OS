@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <getopt.h>
+#include <deque>
 
 using namespace std;
 
@@ -25,7 +26,6 @@ typedef struct
 
     // Use the remaining bits (20 bits) for custom usage
     unsigned int file_mapped : 1;
-    unsigned int valid_vma : 1;
     unsigned int searched : 1;
     unsigned int custom_bits : 18;
 } pte_t;
@@ -42,7 +42,6 @@ pte_t new_PTE()
     newPTE.frame_number = 0;
 
     newPTE.searched = 0;
-    newPTE.valid_vma = 0;
     newPTE.file_mapped = 0;
     newPTE.custom_bits = 0;
     return newPTE;
@@ -53,6 +52,7 @@ typedef struct
 {
     int process_id;
     int virtual_page;
+    int frame_index;
     // Add more fields as needed
 } frame_t;
 
@@ -87,6 +87,7 @@ public:
     }
 };
 
+deque<int> free_frames;
 frame_t frame_table[MAX_FRAMES];
 vector<Process *> processes;
 Process *current_process = nullptr;
@@ -94,30 +95,43 @@ Pager *THE_PAGER;
 
 frame_t *allocate_frame_from_free_list()
 {
+    if (free_frames.empty())
+    {
+        return nullptr;
+    }
+    int res = free_frames.front();
+    free_frames.pop_front();
+    return &frame_table[res];
 }
 
 frame_t *get_frame()
 {
     frame_t *frame = allocate_frame_from_free_list();
-    if (frame == NULL)
+    if (frame == nullptr)
         frame = THE_PAGER->select_victim_frame();
     return frame;
 }
 
-void pgfault_handler(pte_t *pte, int vpage)
+string pgfault_handler(pte_t *pte, int vpage)
 {
+    // first determine vpage can be accessed
     if (!pte->searched)
     {
         for (auto vma : current_process->vmas)
         {
             if (vpage >= vma->starting_virtual_page && vpage <= vma->ending_virtual_page)
             {
-                pte->valid_vma = 1;
+                pte->present = 1;
                 break;
             }
         }
         pte->searched = 1;
     }
+    if (pte->present)
+    {
+        return string();
+    }
+    return "SEGV";
 }
 
 void Simulation(ifstream &inputFile)
@@ -153,13 +167,42 @@ void Simulation(ifstream &inputFile)
         pte_t *pte = &current_process->page_table[vpage];
         if (!pte->present)
         {
-            pgfault_handler(pte, vpage);
+            string segerror = pgfault_handler(pte, vpage);
+            if (!segerror.empty())
+            {
+                cout << segerror << endl;
+                continue;
+            }
             // this in reality generates the page fault exception and now you execute
             // verify this is actually a valid page in a vma if not raise error and next inst
             frame_t *newframe = get_frame();
             //-> figure out if/what to do with old frame if it was mapped
             // see general outline in MM-slides under Lab3 header and writeup below
             // see whether and how to bring in the content of the access page.
+            if (pte->file_mapped)
+            {
+                cout << " FIN" << endl;
+            }
+            else if (pte->paged_out)
+            {
+                cout << " IN" << endl;
+            }
+            else
+            {
+                cout << " ZERO" << endl;
+            }
+            newframe->virtual_page = vpage;
+            newframe->process_id = current_process->pid;
+            pte->frame_number = newframe->frame_index;
+            cout << " MAP " << newframe->frame_index;
+            if (operation == 'r')
+            {
+                pte->referenced = 1;
+            }
+            if (operation == 'w')
+            {
+                pte->modified = 1;
+            }
         }
 
         ins++;
@@ -193,10 +236,11 @@ int main(int argc, char *argv[])
         }
     }
 
-    // initialize frame table
+    // initialize free frame
     for (int i = 0; i < num_frames; i++)
     {
-        frame_table[i].process_id = i;
+        frame_table[i].frame_index = i;
+        free_frames.push_back(i);
     }
     // Parse non-option arguments
     if (optind + 2 == argc)
