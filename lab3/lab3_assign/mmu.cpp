@@ -25,6 +25,7 @@ typedef struct
     unsigned int frame_number : 7;  // 7 bits for the number of the physical frame (assuming 128 frames)
 
     // Use the remaining bits (20 bits) for custom usage
+    unsigned int valid : 1;
     unsigned int file_mapped : 1;
     unsigned int searched : 1;
     unsigned int custom_bits : 18;
@@ -41,6 +42,7 @@ pte_t new_PTE()
     newPTE.paged_out = 0;
     newPTE.frame_number = 0;
 
+    newPTE.valid = 0;
     newPTE.searched = 0;
     newPTE.file_mapped = 0;
     newPTE.custom_bits = 0;
@@ -53,6 +55,8 @@ typedef struct
     int process_id;
     int virtual_page;
     int frame_index;
+    int is_victim;
+    int mapped;
     // Add more fields as needed
 } frame_t;
 
@@ -72,6 +76,12 @@ public:
     pte_t page_table[MAX_VPAGES];
 };
 
+deque<int> free_frames;
+frame_t frame_table[MAX_FRAMES];
+vector<Process *> processes;
+Process *current_process = nullptr;
+Pager *THE_PAGER;
+
 // Define a class for the pager (base class for replacement algorithms)
 class Pager
 {
@@ -84,14 +94,19 @@ class FIFO_Pager : public Pager
 public:
     frame_t *select_victim_frame() override
     {
+        if (hand >= num_frames)
+        {
+            hand = 0;
+        }
+        frame_t *res = &frame_table[hand];
+        res->is_victim = 1;
+        hand++;
+        return res;
     }
-};
 
-deque<int> free_frames;
-frame_t frame_table[MAX_FRAMES];
-vector<Process *> processes;
-Process *current_process = nullptr;
-Pager *THE_PAGER;
+private:
+    int hand = 0;
+};
 
 frame_t *allocate_frame_from_free_list()
 {
@@ -121,7 +136,7 @@ string pgfault_handler(pte_t *pte, int vpage)
         {
             if (vpage >= vma->starting_virtual_page && vpage <= vma->ending_virtual_page)
             {
-                pte->present = 1;
+                pte->valid = 1;
                 break;
             }
         }
@@ -134,7 +149,76 @@ string pgfault_handler(pte_t *pte, int vpage)
     return "SEGV";
 }
 
-void Simulation(ifstream &inputFile)
+void print_pgtable(pte_t page_table[], int pid)
+{
+    cout << "PT[" << pid << "]: ";
+    for (int i = 0; i < MAX_VPAGES; i++)
+    {
+        if (page_table[i].present)
+        {
+            if (page_table[i].referenced)
+            {
+                cout << "R";
+            }
+            else
+            {
+                cout << "-";
+            }
+
+            if (page_table[i].modified)
+            {
+                cout << "M";
+            }
+            else
+            {
+                cout << "-";
+            }
+
+            if (page_table[i].paged_out)
+            {
+                cout << "S";
+            }
+            else
+            {
+                cout << "-";
+            }
+        }
+        else
+        {
+            if (page_table[i].paged_out)
+            {
+                cout << "# ";
+            }
+            else
+            {
+                cout << "* ";
+            }
+        }
+        cout << " ";
+    }
+    cout << endl;
+    return;
+}
+
+void print_ftable()
+{
+    cout << "FT: ";
+    for (int i = 0; i < num_frames; i++)
+    {
+        if (frame_table[i].mapped)
+        {
+            cout << frame_table[i].process_id << ":" << frame_table[i].virtual_page << " ";
+        }
+        else
+        {
+            cout << "* ";
+        }
+    }
+    cout << endl;
+    return;
+}
+
+void simulation(ifstream &inputFile)
 {
     string line;
     char operation;
@@ -179,6 +263,23 @@ void Simulation(ifstream &inputFile)
             //-> figure out if/what to do with old frame if it was mapped
             // see general outline in MM-slides under Lab3 header and writeup below
             // see whether and how to bring in the content of the access page.
+            if (newframe->is_victim)
+            {
+                cout << " UNMAP " << newframe->process_id << " : " << newframe->virtual_page << endl;
+                newframe->is_victim = 0;
+                if (processes[newframe->process_id]->page_table[newframe->virtual_page].modified)
+                {
+                    cout << "OUT" << endl;
+                    processes[newframe->process_id]->page_table[newframe->virtual_page].modified = 0;
+                }
+                else if (processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped)
+                {
+                    cout << "FOUT" << endl;
+                    processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped = 0;
+                }
+                processes[newframe->process_id]->page_table[newframe->virtual_page].frame_number = 0;
+                newframe->virtual_page = 0;
+            }
             if (pte->file_mapped)
             {
                 cout << " FIN" << endl;
@@ -186,6 +287,10 @@ void Simulation(ifstream &inputFile)
             else if (pte->paged_out)
             {
                 cout << " IN" << endl;
+            }
+            else if (pte->modified)
+            {
+                cout << " OUT" << endl;
             }
             else
             {
@@ -204,7 +309,8 @@ void Simulation(ifstream &inputFile)
                 pte->modified = 1;
             }
         }
-
+        print_pgtable(current_process->page_table, current_process->pid);
+        print_ftable();
         ins++;
     }
     return;
@@ -319,7 +425,7 @@ int main(int argc, char *argv[])
         delete proc;
     }
     processes.clear();
-    Simulation(inputFile);
+    simulation(inputFile);
     inputFile.close();
     delete THE_PAGER;
     return 0;
