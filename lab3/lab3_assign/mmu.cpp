@@ -80,7 +80,6 @@ deque<int> free_frames;
 frame_t frame_table[MAX_FRAMES];
 vector<Process *> processes;
 Process *current_process = nullptr;
-Pager *THE_PAGER;
 
 // Define a class for the pager (base class for replacement algorithms)
 class Pager
@@ -107,6 +106,8 @@ public:
 private:
     int hand = 0;
 };
+
+Pager *THE_PAGER;
 
 frame_t *allocate_frame_from_free_list()
 {
@@ -142,8 +143,9 @@ string pgfault_handler(pte_t *pte, int vpage)
         }
         pte->searched = 1;
     }
-    if (pte->present)
+    if (pte->valid)
     {
+        pte->present;
         return string();
     }
     return "SEGV";
@@ -279,6 +281,7 @@ void simulation(ifstream &inputFile)
                 }
                 processes[newframe->process_id]->page_table[newframe->virtual_page].frame_number = 0;
                 newframe->virtual_page = 0;
+                newframe->mapped = 0;
             }
             if (pte->file_mapped)
             {
@@ -297,6 +300,7 @@ void simulation(ifstream &inputFile)
                 cout << " ZERO" << endl;
             }
             newframe->virtual_page = vpage;
+            newframe->mapped = 1;
             newframe->process_id = current_process->pid;
             pte->frame_number = newframe->frame_index;
             cout << " MAP " << newframe->frame_index;
