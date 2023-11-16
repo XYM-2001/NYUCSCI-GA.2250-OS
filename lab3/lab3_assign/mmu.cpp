@@ -145,7 +145,7 @@ string pgfault_handler(pte_t *pte, int vpage)
     }
     if (pte->valid)
     {
-        pte->present;
+        pte->present = 1;
         return string();
     }
     return "SEGV";
@@ -158,6 +158,7 @@ void print_pgtable(pte_t page_table[], int pid)
     {
         if (page_table[i].present)
         {
+            cout << i << ":";
             if (page_table[i].referenced)
             {
                 cout << "R";
@@ -250,71 +251,71 @@ void simulation(ifstream &inputFile)
                 }
             }
         }
-        pte_t *pte = &current_process->page_table[vpage];
-        if (!pte->present)
+        else
         {
-            string segerror = pgfault_handler(pte, vpage);
-            if (!segerror.empty())
+            pte_t *pte = &current_process->page_table[vpage];
+            if (!pte->present)
             {
-                cout << segerror << endl;
-                continue;
-            }
-            // this in reality generates the page fault exception and now you execute
-            // verify this is actually a valid page in a vma if not raise error and next inst
-            frame_t *newframe = get_frame();
-            //-> figure out if/what to do with old frame if it was mapped
-            // see general outline in MM-slides under Lab3 header and writeup below
-            // see whether and how to bring in the content of the access page.
-            if (newframe->is_victim)
-            {
-                cout << " UNMAP " << newframe->process_id << " : " << newframe->virtual_page << endl;
-                newframe->is_victim = 0;
-                if (processes[newframe->process_id]->page_table[newframe->virtual_page].modified)
+                string segerror = pgfault_handler(pte, vpage);
+                if (!segerror.empty())
                 {
-                    cout << "OUT" << endl;
-                    processes[newframe->process_id]->page_table[newframe->virtual_page].modified = 0;
+                    cout << segerror << endl;
+                    continue;
                 }
-                else if (processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped)
+                // this in reality generates the page fault exception and now you execute
+                // verify this is actually a valid page in a vma if not raise error and next inst
+                frame_t *newframe = get_frame();
+                //-> figure out if/what to do with old frame if it was mapped
+                // see general outline in MM-slides under Lab3 header and writeup below
+                // see whether and how to bring in the content of the access page.
+                if (newframe->is_victim)
                 {
-                    cout << "FOUT" << endl;
-                    processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped = 0;
+                    cout << " UNMAP " << newframe->process_id << " : " << newframe->virtual_page << endl;
+                    newframe->is_victim = 0;
+                    if (processes[newframe->process_id]->page_table[newframe->virtual_page].modified)
+                    {
+                        cout << "OUT" << endl;
+                        processes[newframe->process_id]->page_table[newframe->virtual_page].modified = 0;
+                    }
+                    else if (processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped)
+                    {
+                        cout << "FOUT" << endl;
+                        processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped = 0;
+                    }
+                    processes[newframe->process_id]->page_table[newframe->virtual_page].frame_number = 0;
+                    newframe->virtual_page = 0;
+                    newframe->mapped = 0;
                 }
-                processes[newframe->process_id]->page_table[newframe->virtual_page].frame_number = 0;
-                newframe->virtual_page = 0;
-                newframe->mapped = 0;
+                if (pte->file_mapped)
+                {
+                    cout << " FIN" << endl;
+                }
+                else if (pte->paged_out)
+                {
+                    cout << " IN" << endl;
+                }
+                else if (pte->modified)
+                {
+                    cout << " OUT" << endl;
+                }
+                else
+                {
+                    cout << " ZERO" << endl;
+                }
+                newframe->virtual_page = vpage;
+                newframe->mapped = 1;
+                newframe->process_id = current_process->pid;
+                pte->frame_number = newframe->frame_index;
+                cout << " MAP " << newframe->frame_index << endl;
             }
-            if (pte->file_mapped)
-            {
-                cout << " FIN" << endl;
-            }
-            else if (pte->paged_out)
-            {
-                cout << " IN" << endl;
-            }
-            else if (pte->modified)
-            {
-                cout << " OUT" << endl;
-            }
-            else
-            {
-                cout << " ZERO" << endl;
-            }
-            newframe->virtual_page = vpage;
-            newframe->mapped = 1;
-            newframe->process_id = current_process->pid;
-            pte->frame_number = newframe->frame_index;
-            cout << " MAP " << newframe->frame_index;
-            if (operation == 'r')
-            {
-                pte->referenced = 1;
-            }
+            pte->referenced = 1;
             if (operation == 'w')
             {
                 pte->modified = 1;
             }
+            print_pgtable(current_process->page_table, current_process->pid);
+            print_ftable();
         }
-        print_pgtable(current_process->page_table, current_process->pid);
-        print_ftable();
         ins++;
     }
     return;
@@ -398,7 +399,6 @@ int main(int argc, char *argv[])
         {
             process->page_table[j] = new_PTE();
         }
-        processes.push_back(process);
         while (getline(inputFile, line))
         {
             if (line[0] != '#')
@@ -415,7 +415,9 @@ int main(int argc, char *argv[])
             iss >> new_v->starting_virtual_page >> new_v->ending_virtual_page >> new_v->write_protected >> new_v->filemapped;
             process->vmas.push_back(new_v);
         }
+        processes.push_back(process);
     }
+    simulation(inputFile);
     cout << "num of processes: " << processes.size() << endl;
     for (auto proc : processes)
     {
@@ -429,8 +431,8 @@ int main(int argc, char *argv[])
         delete proc;
     }
     processes.clear();
-    simulation(inputFile);
     inputFile.close();
     delete THE_PAGER;
+    cout << "Simulation finished" << endl;
     return 0;
 }
