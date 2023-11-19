@@ -272,6 +272,29 @@ void simulation(ifstream &inputFile)
             ctx_swiches++;
             current_process = processes[vpage];
         }
+        else if (operation == 'e')
+        {
+            cout << "EXIT current process " << vpage << endl;
+            process_exits++;
+            for (int i = 0; i < MAX_VPAGES; i++)
+            {
+                pte_t *pte = &current_process->page_table[i];
+                pte->paged_out = 0;
+                if (pte->present)
+                {
+                    cout << " UNMAP " << vpage << ":" << i << endl;
+                    current_process->unmaps++;
+                    pte->present = 0;
+                    if (pte->modified && pte->file_mapped)
+                    {
+                        cout << " FOUT" << endl;
+                        current_process->fouts++;
+                    }
+                    frame_table[pte->frame_number].mapped = 0;
+                    free_frames.push_back(pte->frame_number);
+                }
+            }
+        }
         else
         {
             pte_t *pte = &current_process->page_table[vpage];
@@ -294,21 +317,21 @@ void simulation(ifstream &inputFile)
                 {
                     cout << " UNMAP " << newframe->process_id << ":" << newframe->virtual_page << endl;
                     processes[newframe->process_id]->page_table[newframe->virtual_page].present = 0;
-                    current_process->unmaps++;
+                    processes[newframe->process_id]->unmaps++;
                     newframe->is_victim = 0;
                     if (processes[newframe->process_id]->page_table[newframe->virtual_page].modified)
                     {
                         if (processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped)
                         {
                             cout << " FOUT" << endl;
-                            current_process->fouts++;
+                            processes[newframe->process_id]->fouts++;
                         }
                         else
                         {
                             cout << " OUT" << endl;
                             processes[newframe->process_id]->page_table[newframe->virtual_page].modified = 0;
                             processes[newframe->process_id]->page_table[newframe->virtual_page].paged_out = 1;
-                            current_process->outs++;
+                            processes[newframe->process_id]->outs++;
                         }
                     }
                     if (!processes[newframe->process_id]->page_table[newframe->virtual_page].paged_out)
