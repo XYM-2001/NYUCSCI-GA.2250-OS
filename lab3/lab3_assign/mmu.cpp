@@ -12,6 +12,11 @@ const int MAX_FRAMES = 128;
 const int MAX_VPAGES = 64;
 vector<int> randvals;
 int num_frames;
+int inst_count = 0;
+int ctx_swiches = 0;
+int process_exits = 0;
+int pg_out = 0;
+int frame_out = 0;
 
 // Define a structure for a page table entry (PTE)
 typedef struct
@@ -28,7 +33,7 @@ typedef struct
     unsigned int valid : 1;
     unsigned int file_mapped : 1;
     unsigned int searched : 1;
-    unsigned int custom_bits : 18;
+    unsigned int custom_bits : 17;
 } pte_t;
 
 // Constructor for pte_t
@@ -74,6 +79,27 @@ public:
     int pid;
     vector<vma *> vmas;
     pte_t page_table[MAX_VPAGES];
+    int unmaps;
+    int maps;
+    int ins;
+    int outs;
+    int fins;
+    int fouts;
+    int zeros;
+    int segv;
+    int segprot;
+    Process()
+    {
+        unmaps = 0;
+        maps = 0;
+        ins = 0;
+        outs = 0;
+        fins = 0;
+        fouts = 0;
+        zeros = 0;
+        segv = 0;
+        segprot = 0;
+    }
 };
 
 deque<int> free_frames;
@@ -138,6 +164,8 @@ string pgfault_handler(pte_t *pte, int vpage)
             if (vpage >= vma->starting_virtual_page && vpage <= vma->ending_virtual_page)
             {
                 pte->valid = 1;
+                pte->file_mapped = vma->filemapped;
+                pte->write_protect = vma->write_protected;
                 break;
             }
         }
@@ -148,6 +176,7 @@ string pgfault_handler(pte_t *pte, int vpage)
         pte->present = 1;
         return string();
     }
+    current_process->segv++;
     return "SEGV";
 }
 
@@ -190,11 +219,11 @@ void print_pgtable(pte_t page_table[], int pid)
         {
             if (page_table[i].paged_out)
             {
-                cout << "# ";
+                cout << "#";
             }
             else
             {
-                cout << "* ";
+                cout << "*";
             }
         }
         cout << " ";
@@ -226,7 +255,6 @@ void simulation(ifstream &inputFile)
     string line;
     char operation;
     int vpage;
-    int ins = 0;
     while (getline(inputFile, line))
     {
         if (line[0] == '#')
@@ -236,20 +264,13 @@ void simulation(ifstream &inputFile)
 
         istringstream iss(line);
         iss >> operation >> vpage;
-        cout << ins << ": ==> " << operation << " " << vpage << endl;
+        cout << inst_count << ": ==> " << operation << " " << vpage << endl;
         // handle special case of “c” and “e” instruction
         // now the real instructions for read and write
         if (operation == 'c')
         {
+            ctx_swiches++;
             current_process = processes[vpage];
-            for (auto vma : current_process->vmas)
-            {
-                for (int i = vma->starting_virtual_page; i <= vma->ending_virtual_page; i++)
-                {
-                    current_process->page_table[i].write_protect = vma->write_protected;
-                    current_process->page_table[i].file_mapped = vma->filemapped;
-                }
-            }
         }
         else
         {
@@ -260,6 +281,7 @@ void simulation(ifstream &inputFile)
                 if (!segerror.empty())
                 {
                     cout << segerror << endl;
+                    inst_count++;
                     continue;
                 }
                 // this in reality generates the page fault exception and now you execute
@@ -270,17 +292,28 @@ void simulation(ifstream &inputFile)
                 // see whether and how to bring in the content of the access page.
                 if (newframe->is_victim)
                 {
-                    cout << " UNMAP " << newframe->process_id << " : " << newframe->virtual_page << endl;
+                    cout << " UNMAP " << newframe->process_id << ":" << newframe->virtual_page << endl;
+                    processes[newframe->process_id]->page_table[newframe->virtual_page].present = 0;
+                    current_process->unmaps++;
                     newframe->is_victim = 0;
                     if (processes[newframe->process_id]->page_table[newframe->virtual_page].modified)
                     {
-                        cout << "OUT" << endl;
-                        processes[newframe->process_id]->page_table[newframe->virtual_page].modified = 0;
+                        if (processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped)
+                        {
+                            cout << " FOUT" << endl;
+                            current_process->fouts++;
+                        }
+                        else
+                        {
+                            cout << " OUT" << endl;
+                            processes[newframe->process_id]->page_table[newframe->virtual_page].modified = 0;
+                            processes[newframe->process_id]->page_table[newframe->virtual_page].paged_out = 1;
+                            current_process->outs++;
+                        }
                     }
-                    else if (processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped)
+                    if (!processes[newframe->process_id]->page_table[newframe->virtual_page].paged_out)
                     {
-                        cout << "FOUT" << endl;
-                        processes[newframe->process_id]->page_table[newframe->virtual_page].file_mapped = 0;
+                        processes[newframe->process_id]->page_table[newframe->virtual_page].modified = 0;
                     }
                     processes[newframe->process_id]->page_table[newframe->virtual_page].frame_number = 0;
                     newframe->virtual_page = 0;
@@ -289,34 +322,49 @@ void simulation(ifstream &inputFile)
                 if (pte->file_mapped)
                 {
                     cout << " FIN" << endl;
+                    current_process->fins++;
                 }
                 else if (pte->paged_out)
                 {
                     cout << " IN" << endl;
-                }
-                else if (pte->modified)
-                {
-                    cout << " OUT" << endl;
+                    pte->present = 1;
+                    current_process->ins++;
                 }
                 else
                 {
                     cout << " ZERO" << endl;
+                    current_process->zeros++;
                 }
+                cout << " MAP " << newframe->frame_index << endl;
                 newframe->virtual_page = vpage;
                 newframe->mapped = 1;
                 newframe->process_id = current_process->pid;
                 pte->frame_number = newframe->frame_index;
-                cout << " MAP " << newframe->frame_index << endl;
+                current_process->maps++;
             }
             pte->referenced = 1;
             if (operation == 'w')
             {
-                pte->modified = 1;
+                if (pte->write_protect)
+                {
+                    cout << " SEGPROT" << endl;
+                    current_process->segprot++;
+                }
+                else
+                {
+                    pte->modified = 1;
+                }
             }
-            print_pgtable(current_process->page_table, current_process->pid);
-            print_ftable();
+            if (pg_out)
+            {
+                print_pgtable(current_process->page_table, current_process->pid);
+            }
+            if (frame_out)
+            {
+                print_ftable();
+            }
         }
-        ins++;
+        inst_count++;
     }
     return;
 }
@@ -347,6 +395,18 @@ int main(int argc, char *argv[])
         }
     }
 
+    if (options.find('x') != string::npos)
+    {
+        pg_out = 1;
+    }
+    if (options.find('f') != string::npos)
+    {
+        frame_out = 1;
+    }
+    if (algo == "f")
+    {
+        THE_PAGER = new FIFO_Pager();
+    }
     // initialize free frame
     for (int i = 0; i < num_frames; i++)
     {
@@ -393,7 +453,7 @@ int main(int argc, char *argv[])
     for (int i = 0; i < proc_count; i++)
     {
         int vma_count;
-        Process *process = new Process;
+        Process *process = new Process();
         process->pid = i;
         for (int j = 0; j < MAX_VPAGES; j++)
         {
@@ -418,6 +478,25 @@ int main(int argc, char *argv[])
         processes.push_back(process);
     }
     simulation(inputFile);
+    for (auto proc : processes)
+    {
+        print_pgtable(proc->page_table, proc->pid);
+    }
+    print_ftable();
+    unsigned long long cost = 0;
+    for (auto proc : processes)
+    {
+        cout << "PROC[" << proc->pid << "]:"
+             << " U=" << proc->unmaps << " M=" << proc->maps << " I=" << proc->ins
+             << " O=" << proc->outs << " FI=" << proc->fins << " FO=" << proc->fouts
+             << " Z=" << proc->zeros << " SV=" << proc->segv << " SP=" << proc->segprot << endl;
+        cost += proc->unmaps * 410 + proc->maps * 350 + proc->ins * 3200 +
+                proc->outs * 2750 + proc->fins * 2350 + proc->fouts * 2800 + proc->zeros * 150 +
+                proc->segv * 440 + proc->segprot * 410;
+    }
+    cost += inst_count - ctx_swiches - process_exits + ctx_swiches * 130 + process_exits * 1230;
+    cout << "TOTALCOST " << inst_count << " " << ctx_swiches
+         << " " << process_exits << " " << cost << " " << sizeof(pte_t) << endl;
     cout << "num of processes: " << processes.size() << endl;
     for (auto proc : processes)
     {
