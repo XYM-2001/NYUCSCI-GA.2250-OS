@@ -10,6 +10,7 @@ using namespace std;
 // Define constants
 const int MAX_FRAMES = 128;
 const int MAX_VPAGES = 64;
+const int daemon = 0;
 vector<int> randvals;
 int num_frames;
 int inst_count = 0;
@@ -156,6 +157,195 @@ public:
         res->is_victim = 1;
         return res;
     }
+};
+
+class Clock_Pager : public Pager
+{
+public:
+    frame_t *select_victim_frame() override
+    {
+        frame_t *res;
+        while (1)
+        {
+            res = &frame_table[hand];
+            if (processes[res->process_id]->page_table[res->virtual_page].referenced)
+            {
+                processes[res->process_id]->page_table[res->virtual_page].referenced = 0;
+                hand++;
+                if (hand >= num_frames)
+                {
+                    hand = 0;
+                }
+            }
+            else
+            {
+                hand++;
+                if (hand >= num_frames)
+                {
+                    hand = 0;
+                }
+                break;
+            }
+        }
+        res->is_victim = 1;
+        return res;
+    }
+
+private:
+    int hand = 0;
+};
+
+class ESC_Pager : public Pager
+{
+public:
+    frame_t *select_victim_frame() override
+    {
+        int inst_since_last = inst_count + 1 - last_inst;
+        bool reset_rbit;
+        bool reset_only = false;
+        // int pointer = hand;
+        int class0 = -1;
+        int class1 = -1;
+        int class2 = -1;
+        int class3 = -1;
+        frame_t *res;
+        if (inst_since_last >= 48)
+        {
+            reset_rbit = true;
+            last_inst = inst_count + 1;
+        }
+        else
+        {
+            reset_rbit = false;
+        }
+        // for (int i = 0; i < num_frames; i++)
+        // {
+        //     if (!processes[frame_table[pointer].process_id]->page_table[frame_table[pointer].virtual_page].referenced)
+        //     {
+        //         if (!processes[frame_table[pointer].process_id]->page_table[frame_table[pointer].virtual_page].modified)
+        //         {
+        //             class0 = pointer;
+        //             break;
+        //         }
+        //         else
+        //         {
+        //             class1 = pointer;
+        //         }
+        //     }
+        //     else
+        //     {
+        //         if (!processes[frame_table[pointer].process_id]->page_table[frame_table[pointer].virtual_page].modified)
+        //         {
+        //             class2 = pointer;
+        //         }
+        //         else
+        //         {
+        //             class3 = pointer;
+        //         }
+        //     }
+        //     if (reset_rbit)
+        //     {
+        //         processes[frame_table[pointer].process_id]->page_table[frame_table[pointer].virtual_page].referenced = 0;
+        //     }
+        //     pointer++;
+        //     if (pointer >= num_frames)
+        //     {
+        //         pointer = 0;
+        //     }
+        // }
+
+        for (int i = 0; i < num_frames; i++)
+        {
+            if (reset_only)
+            {
+                processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced = 0;
+            }
+            else
+            {
+
+                if (!processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced)
+                {
+                    if (!processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].modified)
+                    {
+                        if (class0 == -1)
+                        {
+                            class0 = hand;
+                        }
+                        if (reset_rbit)
+                        {
+                            reset_only = true;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        if (class1 == -1)
+                        {
+                            class1 = hand;
+                        }
+                    }
+                }
+                else
+                {
+                    if (!processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].modified)
+                    {
+                        if (class2 == -1)
+                        {
+                            class2 = hand;
+                        }
+                    }
+                    else
+                    {
+                        if (class3 == -1)
+                        {
+                            class3 = hand;
+                        }
+                    }
+                }
+                if (reset_rbit)
+                {
+                    processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced = 0;
+                }
+            }
+            hand++;
+            if (hand >= num_frames)
+            {
+                hand = 0;
+            }
+        }
+
+        if (class0 != -1)
+        {
+            hand = class0;
+        }
+        else if (class1 != -1)
+        {
+            hand = class1;
+        }
+        else if (class2 != -1)
+        {
+            hand = class2;
+        }
+        else
+        {
+            hand = class3;
+        }
+        res = &frame_table[hand];
+        hand++;
+        if (hand >= num_frames)
+        {
+            hand = 0;
+        }
+        res->is_victim = 1;
+        return res;
+    }
+
+private:
+    int last_inst;
+    int hand = 0;
 };
 
 Pager *THE_PAGER;
@@ -464,6 +654,14 @@ int main(int argc, char *argv[])
     {
         THE_PAGER = new Random_Pager();
     }
+    else if (algo == "c")
+    {
+        THE_PAGER = new Clock_Pager();
+    }
+    else if (algo == "e")
+    {
+        THE_PAGER = new ESC_Pager();
+    }
 
     // initialize free frame
     for (int i = 0; i < num_frames; i++)
@@ -484,6 +682,7 @@ int main(int argc, char *argv[])
         return 1; // Return an error code for missing input files
     }
 
+    // read random file
     ifstream randFile(randfile);
     int num;
     if (!(randFile >> num))
@@ -498,6 +697,8 @@ int main(int argc, char *argv[])
         randvals.push_back(num);
     }
     randFile.close();
+
+    // read input file
     ifstream inputFile(inputfile);
     string line;
     int proc_count;
@@ -536,7 +737,9 @@ int main(int argc, char *argv[])
         }
         processes.push_back(process);
     }
+
     simulation(inputFile);
+
     for (auto proc : processes)
     {
         print_pgtable(proc->page_table, proc->pid);
