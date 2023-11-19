@@ -17,6 +17,19 @@ int ctx_swiches = 0;
 int process_exits = 0;
 int pg_out = 0;
 int frame_out = 0;
+int ofs = 1;
+
+int myrandom()
+{
+    int result;
+    if (ofs > randvals[0])
+    {
+        ofs = 1;
+    }
+    result = randvals[ofs] % num_frames;
+    ofs++;
+    return result;
+}
 
 // Define a structure for a page table entry (PTE)
 typedef struct
@@ -131,6 +144,18 @@ public:
 
 private:
     int hand = 0;
+};
+
+class Random_Pager : public Pager
+{
+public:
+    frame_t *select_victim_frame() override
+    {
+        int index = myrandom();
+        frame_t *res = &frame_table[index];
+        res->is_victim = 1;
+        return res;
+    }
 };
 
 Pager *THE_PAGER;
@@ -420,22 +445,33 @@ int main(int argc, char *argv[])
 
     if (options.find('x') != string::npos)
     {
+        // turn on the page table output
         pg_out = 1;
     }
+
     if (options.find('f') != string::npos)
     {
+        // turn on the frame table output
         frame_out = 1;
     }
+
+    // initializing Pager algorithms
     if (algo == "f")
     {
         THE_PAGER = new FIFO_Pager();
     }
+    else if (algo == "r")
+    {
+        THE_PAGER = new Random_Pager();
+    }
+
     // initialize free frame
     for (int i = 0; i < num_frames; i++)
     {
         frame_table[i].frame_index = i;
         free_frames.push_back(i);
     }
+
     // Parse non-option arguments
     if (optind + 2 == argc)
     {
