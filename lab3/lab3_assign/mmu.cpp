@@ -4,6 +4,7 @@
 #include <sstream>
 #include <getopt.h>
 #include <deque>
+#include <math.h>
 
 using namespace std;
 
@@ -76,6 +77,7 @@ typedef struct
     int frame_index;
     int is_victim;
     int mapped;
+    unsigned int age : 32;
     // Add more fields as needed
 } frame_t;
 
@@ -126,6 +128,9 @@ class Pager
 {
 public:
     virtual frame_t *select_victim_frame() = 0;
+    virtual void reset_age(frame_t *frame)
+    {
+    }
 };
 
 class FIFO_Pager : public Pager
@@ -218,41 +223,6 @@ public:
         {
             reset_rbit = false;
         }
-        // for (int i = 0; i < num_frames; i++)
-        // {
-        //     if (!processes[frame_table[pointer].process_id]->page_table[frame_table[pointer].virtual_page].referenced)
-        //     {
-        //         if (!processes[frame_table[pointer].process_id]->page_table[frame_table[pointer].virtual_page].modified)
-        //         {
-        //             class0 = pointer;
-        //             break;
-        //         }
-        //         else
-        //         {
-        //             class1 = pointer;
-        //         }
-        //     }
-        //     else
-        //     {
-        //         if (!processes[frame_table[pointer].process_id]->page_table[frame_table[pointer].virtual_page].modified)
-        //         {
-        //             class2 = pointer;
-        //         }
-        //         else
-        //         {
-        //             class3 = pointer;
-        //         }
-        //     }
-        //     if (reset_rbit)
-        //     {
-        //         processes[frame_table[pointer].process_id]->page_table[frame_table[pointer].virtual_page].referenced = 0;
-        //     }
-        //     pointer++;
-        //     if (pointer >= num_frames)
-        //     {
-        //         pointer = 0;
-        //     }
-        // }
 
         for (int i = 0; i < num_frames; i++)
         {
@@ -345,6 +315,47 @@ public:
 
 private:
     int last_inst;
+    int hand = 0;
+};
+
+class Aging_Pager : public Pager
+{
+public:
+    frame_t *select_victim_frame() override
+    {
+        frame_t *res = &frame_table[hand];
+
+        // Iterate through all frames to find the frame with the minimum age
+        for (int i = 0; i < num_frames; i++)
+        {
+            frame_table[hand].age >>= 1;
+            frame_table[hand].age += processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced * 0x80000000;
+            if (frame_table[hand].age < res->age)
+            {
+                res = &frame_table[hand];
+            }
+            processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced = 0;
+            hand++;
+            if (hand >= num_frames)
+            {
+                hand = 0;
+            }
+        }
+        hand++;
+        if (hand >= num_frames)
+        {
+            hand = 0;
+        }
+        res->is_victim = 1;
+        return res;
+    }
+
+    void reset_age(frame_t *frame) override
+    {
+        frame->age = 0;
+    }
+
+private:
     int hand = 0;
 };
 
@@ -574,6 +585,7 @@ void simulation(ifstream &inputFile)
                     current_process->zeros++;
                 }
                 cout << " MAP " << newframe->frame_index << endl;
+                THE_PAGER->reset_age(newframe);
                 newframe->virtual_page = vpage;
                 newframe->mapped = 1;
                 newframe->process_id = current_process->pid;
@@ -661,6 +673,10 @@ int main(int argc, char *argv[])
     else if (algo == "e")
     {
         THE_PAGER = new ESC_Pager();
+    }
+    else if (algo == "a")
+    {
+        THE_PAGER = new Aging_Pager();
     }
 
     // initialize free frame
