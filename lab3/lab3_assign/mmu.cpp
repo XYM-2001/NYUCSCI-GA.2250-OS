@@ -374,12 +374,13 @@ public:
         bool scan = true;
         int ptr = hand;
         frame_t *res;
+        cout << "ASELECT " << hand << "-" << (hand + 15) % 16 << " | ";
         for (int i = 0; i < num_frames; i++)
         {
             res = &frame_table[ptr];
             if (scan)
             {
-                if ((inst_count + 1 - res->age) > TAU && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
+                if ((inst_count - res->age) > TAU && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
                 {
                     // stop the scan when algo found the first frame where the referenced is not set and the instruction since last use pass 49.
                     scan = false;
@@ -390,7 +391,12 @@ public:
                     min_last_inst = res->age;
                 }
             }
-            processes[res->process_id]->page_table[res->virtual_page].referenced = 0;
+            cout << ptr << "(" << processes[res->process_id]->page_table[res->virtual_page].referenced << " " << res->age << ") ";
+            if (processes[res->process_id]->page_table[res->virtual_page].referenced)
+            {
+                processes[res->process_id]->page_table[res->virtual_page].referenced = 0;
+                res->age = inst_count;
+            }
             ptr++;
             if (ptr >= num_frames)
             {
@@ -399,6 +405,7 @@ public:
         }
         res = &frame_table[hand];
         res->is_victim = 1;
+        cout << "| " << hand << endl;
         hand++;
         if (hand >= num_frames)
         {
@@ -409,7 +416,7 @@ public:
 
     void reset_age(frame_t *frame) override
     {
-        frame->age = inst_count + 1;
+        frame->age = inst_count;
     }
 
 private:
