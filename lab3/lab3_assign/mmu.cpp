@@ -735,6 +735,15 @@ int main(int argc, char *argv[])
     {
         THE_PAGER = new Aging_Pager();
     }
+    else if (algo == "w")
+    {
+        THE_PAGER = new WorkingSet_Pager();
+    }
+    else
+    {
+        cerr << "undefined algorithm";
+        exit(1);
+    }
 
     // initialize free frame
     for (int i = 0; i < num_frames; i++)
