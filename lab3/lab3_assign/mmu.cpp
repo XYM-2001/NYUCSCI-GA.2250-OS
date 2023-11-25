@@ -5,13 +5,14 @@
 #include <getopt.h>
 #include <deque>
 #include <math.h>
+#include <climits>
 
 using namespace std;
 
 // Define constants
 const int MAX_FRAMES = 128;
 const int MAX_VPAGES = 64;
-const int daemon = 0;
+const int TAU = 49;
 vector<int> randvals;
 int num_frames;
 int inst_count = 0;
@@ -214,7 +215,7 @@ public:
         int class2 = -1;
         int class3 = -1;
         frame_t *res;
-        if (inst_since_last >= 48)
+        if (inst_since_last > TAU)
         {
             reset_rbit = true;
             last_inst = inst_count + 1;
@@ -323,36 +324,92 @@ class Aging_Pager : public Pager
 public:
     frame_t *select_victim_frame() override
     {
-        frame_t *res = &frame_table[hand];
+        int ptr = hand;
+        frame_t *res;
+        unsigned int min_age = UINT_MAX;
 
         // Iterate through all frames to find the frame with the minimum age
         for (int i = 0; i < num_frames; i++)
         {
-            frame_table[hand].age >>= 1;
-            frame_table[hand].age += processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced * 0x80000000;
-            if (frame_table[hand].age < res->age)
+            res = &frame_table[ptr];
+            res->age >>= 1;
+            res->age += processes[res->process_id]->page_table[res->virtual_page].referenced * 0x80000000;
+            if (res->age < min_age)
             {
-                res = &frame_table[hand];
+                min_age = res->age;
+                hand = ptr;
             }
-            processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced = 0;
-            hand++;
-            if (hand >= num_frames)
+            processes[res->process_id]->page_table[res->virtual_page].referenced = 0;
+            ptr++;
+            if (ptr >= num_frames)
             {
-                hand = 0;
+                ptr = 0;
             }
         }
+        res = &frame_table[hand];
+        res->is_victim = 1;
         hand++;
         if (hand >= num_frames)
         {
             hand = 0;
         }
-        res->is_victim = 1;
         return res;
     }
 
     void reset_age(frame_t *frame) override
     {
         frame->age = 0;
+    }
+
+private:
+    int hand = 0;
+};
+
+class WorkingSet_Pager : public Pager
+{
+public:
+    frame_t *select_victim_frame() override
+    {
+        int min_last_inst = INT_MAX;
+        bool scan = true;
+        int ptr = hand;
+        frame_t *res;
+        for (int i = 0; i < num_frames; i++)
+        {
+            res = &frame_table[ptr];
+            if (scan)
+            {
+                if ((inst_count + 1 - res->age) > TAU && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
+                {
+                    // stop the scan when algo found the first frame where the referenced is not set and the instruction since last use pass 49.
+                    scan = false;
+                }
+                else if (res->age < min_last_inst && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
+                {
+                    hand = ptr;
+                    min_last_inst = res->age;
+                }
+            }
+            processes[res->process_id]->page_table[res->virtual_page].referenced = 0;
+            ptr++;
+            if (ptr >= num_frames)
+            {
+                ptr = 0;
+            }
+        }
+        res = &frame_table[hand];
+        res->is_victim = 1;
+        hand++;
+        if (hand >= num_frames)
+        {
+            hand = 0;
+        }
+        return res;
+    }
+
+    void reset_age(frame_t *frame) override
+    {
+        frame->age = inst_count + 1;
     }
 
 private:
