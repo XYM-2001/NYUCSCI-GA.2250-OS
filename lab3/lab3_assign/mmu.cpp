@@ -393,7 +393,6 @@ public:
         int min_last_inst = INT_MAX;
         int ptr = hand;
         int num_scanned = 0;
-        // bool reset = false;
         frame_t *res;
         if (a_out)
         {
@@ -420,14 +419,12 @@ public:
                 {
                     cout << "STOP(" << num_scanned << ") ";
                 }
-                // reset = true;
                 hand = ptr;
                 min_last_inst = res->age;
                 break;
             }
             else if (res->age < min_last_inst && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
             {
-                // reset = true;
                 hand = ptr;
                 min_last_inst = res->age;
             }
@@ -444,22 +441,6 @@ public:
             cout << "| " << hand << endl;
         }
         ptr = hand;
-        // if (reset)
-        // {
-        //     for (int i = 0; i < num_frames; i++)
-        //     {
-        //         if (processes[frame_table[ptr].process_id]->page_table[frame_table[ptr].virtual_page].referenced)
-        //         {
-        //             processes[frame_table[ptr].process_id]->page_table[frame_table[ptr].virtual_page].referenced = 0;
-        //             frame_table[ptr].age = inst_count;
-        //         }
-        //         ptr++;
-        //         if (ptr >= num_frames)
-        //         {
-        //             ptr = 0;
-        //         }
-        //     }
-        // }
         hand++;
         if (hand >= num_frames)
         {
