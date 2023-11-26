@@ -290,22 +290,34 @@ public:
         if (class0 != -1)
         {
             hand = class0;
-            cout << "0";
+            if (a_out)
+            {
+                cout << "0";
+            }
         }
         else if (class1 != -1)
         {
             hand = class1;
-            cout << "1";
+            if (a_out)
+            {
+                cout << "1";
+            }
         }
         else if (class2 != -1)
         {
             hand = class2;
-            cout << "2";
+            if (a_out)
+            {
+                cout << "2";
+            }
         }
         else
         {
             hand = class3;
-            cout << "3";
+            if (a_out)
+            {
+                cout << "3";
+            }
         }
         if (a_out)
         {
@@ -379,44 +391,45 @@ public:
     frame_t *select_victim_frame() override
     {
         int min_last_inst = INT_MAX;
-        bool scan = true;
         int ptr = hand;
+        int num_scanned = 0;
+        // bool reset = false;
         frame_t *res;
         if (a_out)
         {
-            cout << "ASELECT " << hand << "-" << (hand + 15) % 16 << " | ";
+            cout << "ASELECT " << hand << "-" << (hand + num_frames - 1) % num_frames << " | ";
         }
         for (int i = 0; i < num_frames; i++)
         {
+            num_scanned++;
             res = &frame_table[ptr];
-            if (scan)
+            if (a_out)
             {
-                if (a_out)
-                {
-                    cout << ptr << "(" << processes[res->process_id]->page_table[res->virtual_page].referenced << " " << res->age << ") ";
-                }
-                if ((inst_count - res->age) > TAU && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
-                {
-                    // stop the scan when algo found the first frame where the referenced is not set and the instruction since last use pass 49.
-                    if (a_out)
-                    {
-                        cout << "STOP ";
-                    }
-                    scan = false;
-                    hand = ptr;
-                    min_last_inst = res->age;
-                }
-                else if (res->age < min_last_inst && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
-                {
-                    hand = ptr;
-                    min_last_inst = res->age;
-                }
+                cout << ptr << "(" << processes[res->process_id]->page_table[res->virtual_page].referenced << " " << res->process_id << ":" << res->virtual_page << " " << res->age << ") ";
             }
 
             if (processes[res->process_id]->page_table[res->virtual_page].referenced)
             {
                 processes[res->process_id]->page_table[res->virtual_page].referenced = 0;
                 res->age = inst_count;
+            }
+            else if ((inst_count - res->age) > TAU && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
+            {
+                // stop the scan when algo found the first frame where the referenced is not set and the instruction since last use pass 49.
+                if (a_out)
+                {
+                    cout << "STOP(" << num_scanned << ") ";
+                }
+                // reset = true;
+                hand = ptr;
+                min_last_inst = res->age;
+                break;
+            }
+            else if (res->age < min_last_inst && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
+            {
+                // reset = true;
+                hand = ptr;
+                min_last_inst = res->age;
             }
             ptr++;
             if (ptr >= num_frames)
@@ -430,7 +443,23 @@ public:
         {
             cout << "| " << hand << endl;
         }
-
+        ptr = hand;
+        // if (reset)
+        // {
+        //     for (int i = 0; i < num_frames; i++)
+        //     {
+        //         if (processes[frame_table[ptr].process_id]->page_table[frame_table[ptr].virtual_page].referenced)
+        //         {
+        //             processes[frame_table[ptr].process_id]->page_table[frame_table[ptr].virtual_page].referenced = 0;
+        //             frame_table[ptr].age = inst_count;
+        //         }
+        //         ptr++;
+        //         if (ptr >= num_frames)
+        //         {
+        //             ptr = 0;
+        //         }
+        //     }
+        // }
         hand++;
         if (hand >= num_frames)
         {
@@ -497,9 +526,10 @@ string pgfault_handler(pte_t *pte, int vpage)
 
 void print_pgtable(pte_t page_table[], int pid)
 {
-    cout << "PT[" << pid << "]: ";
+    cout << "PT[" << pid << "]:";
     for (int i = 0; i < MAX_VPAGES; i++)
     {
+        cout << " ";
         if (page_table[i].present)
         {
             cout << i << ":";
@@ -541,7 +571,6 @@ void print_pgtable(pte_t page_table[], int pid)
                 cout << "*";
             }
         }
-        cout << " ";
     }
     cout << endl;
     return;
@@ -549,16 +578,17 @@ void print_pgtable(pte_t page_table[], int pid)
 
 void print_ftable()
 {
-    cout << "FT: ";
+    cout << "FT:";
     for (int i = 0; i < num_frames; i++)
     {
+        cout << " ";
         if (frame_table[i].mapped)
         {
-            cout << frame_table[i].process_id << ":" << frame_table[i].virtual_page << " ";
+            cout << frame_table[i].process_id << ":" << frame_table[i].virtual_page;
         }
         else
         {
-            cout << "* ";
+            cout << "*";
         }
     }
     cout << endl;
