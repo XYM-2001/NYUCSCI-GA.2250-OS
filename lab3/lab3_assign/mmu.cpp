@@ -206,34 +206,27 @@ class ESC_Pager : public Pager
 public:
     frame_t *select_victim_frame() override
     {
-        int inst_since_last = inst_count + 1 - last_inst;
-        bool reset_rbit;
-        bool reset_only = false;
-        // int pointer = hand;
+        int inst_since_last = inst_count - last_inst;
+        bool reset = false;
+        bool scan = true;
+        int ptr = hand;
         int class0 = -1;
         int class1 = -1;
         int class2 = -1;
         int class3 = -1;
         frame_t *res;
-        if (inst_since_last > TAU)
+        int num_frames_scanned = 0;
+        if (inst_since_last >= 47)
         {
-            reset_rbit = true;
-            last_inst = inst_count + 1;
+            reset = true;
+            last_inst = inst_count;
         }
-        else
-        {
-            reset_rbit = false;
-        }
-
+        cout << "ASELECT: " << hand << " " << reset << " | ";
         for (int i = 0; i < num_frames; i++)
         {
-            if (reset_only)
+            if (scan)
             {
-                processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced = 0;
-            }
-            else
-            {
-
+                num_frames_scanned++;
                 if (!processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced)
                 {
                     if (!processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].modified)
@@ -242,9 +235,10 @@ public:
                         {
                             class0 = hand;
                         }
-                        if (reset_rbit)
+                        if (reset)
                         {
-                            reset_only = true;
+                            // continue loop to reset all r bits but not scan the rest.
+                            scan = false;
                         }
                         else
                         {
@@ -276,10 +270,10 @@ public:
                         }
                     }
                 }
-                if (reset_rbit)
-                {
-                    processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced = 0;
-                }
+            }
+            if (reset)
+            {
+                processes[frame_table[hand].process_id]->page_table[frame_table[hand].virtual_page].referenced = 0;
             }
             hand++;
             if (hand >= num_frames)
@@ -291,19 +285,24 @@ public:
         if (class0 != -1)
         {
             hand = class0;
+            cout << "0";
         }
         else if (class1 != -1)
         {
             hand = class1;
+            cout << "1";
         }
         else if (class2 != -1)
         {
             hand = class2;
+            cout << "2";
         }
         else
         {
             hand = class3;
+            cout << "3";
         }
+        cout << " " << hand << " " << num_frames_scanned << endl;
         res = &frame_table[hand];
         hand++;
         if (hand >= num_frames)
@@ -315,7 +314,7 @@ public:
     }
 
 private:
-    int last_inst;
+    int last_inst = 0;
     int hand = 0;
 };
 
@@ -374,7 +373,7 @@ public:
         bool scan = true;
         int ptr = hand;
         frame_t *res;
-        cout << "ASELECT " << hand << "-" << (hand + 15) % 16 << " | ";
+        // cout << "ASELECT " << hand << "-" << (hand + 15) % 16 << " | ";
         for (int i = 0; i < num_frames; i++)
         {
             res = &frame_table[ptr];
@@ -405,7 +404,7 @@ public:
         }
         res = &frame_table[hand];
         res->is_victim = 1;
-        cout << "| " << hand << endl;
+        // cout << "| " << hand << endl;
         hand++;
         if (hand >= num_frames)
         {
@@ -848,13 +847,13 @@ int main(int argc, char *argv[])
     cost += inst_count - ctx_swiches - process_exits + ctx_swiches * 130 + process_exits * 1230;
     cout << "TOTALCOST " << inst_count << " " << ctx_swiches
          << " " << process_exits << " " << cost << " " << sizeof(pte_t) << endl;
-    cout << "num of processes: " << processes.size() << endl;
+    // cout << "num of processes: " << processes.size() << endl;
     for (auto proc : processes)
     {
-        cout << proc->pid << endl;
+        // cout << proc->pid << endl;
         for (auto vma : proc->vmas)
         {
-            cout << vma->starting_virtual_page << " " << vma->ending_virtual_page << " " << vma->write_protected << " " << vma->filemapped << endl;
+            // cout << vma->starting_virtual_page << " " << vma->ending_virtual_page << " " << vma->write_protected << " " << vma->filemapped << endl;
             delete vma;
         }
         proc->vmas.clear();
@@ -863,6 +862,6 @@ int main(int argc, char *argv[])
     processes.clear();
     inputFile.close();
     delete THE_PAGER;
-    cout << "Simulation finished" << endl;
+    // cout << "Simulation finished" << endl;
     return 0;
 }
