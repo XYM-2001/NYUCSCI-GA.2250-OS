@@ -20,6 +20,7 @@ int ctx_swiches = 0;
 int process_exits = 0;
 int pg_out = 0;
 int frame_out = 0;
+int a_out = 0;
 int ofs = 1;
 
 int myrandom()
@@ -219,9 +220,13 @@ public:
         if (inst_since_last >= 47)
         {
             reset = true;
-            last_inst = inst_count;
+            last_inst = inst_count + 1;
         }
-        cout << "ASELECT: " << hand << " " << reset << " | ";
+        if (a_out)
+        {
+
+            cout << "ASELECT: " << hand << " " << reset << " | ";
+        }
         for (int i = 0; i < num_frames; i++)
         {
             if (scan)
@@ -302,7 +307,11 @@ public:
             hand = class3;
             cout << "3";
         }
-        cout << " " << hand << " " << num_frames_scanned << endl;
+        if (a_out)
+        {
+            cout << " " << hand << " " << num_frames_scanned << endl;
+        }
+
         res = &frame_table[hand];
         hand++;
         if (hand >= num_frames)
@@ -373,16 +382,29 @@ public:
         bool scan = true;
         int ptr = hand;
         frame_t *res;
-        // cout << "ASELECT " << hand << "-" << (hand + 15) % 16 << " | ";
+        if (a_out)
+        {
+            cout << "ASELECT " << hand << "-" << (hand + 15) % 16 << " | ";
+        }
         for (int i = 0; i < num_frames; i++)
         {
             res = &frame_table[ptr];
             if (scan)
             {
+                if (a_out)
+                {
+                    cout << ptr << "(" << processes[res->process_id]->page_table[res->virtual_page].referenced << " " << res->age << ") ";
+                }
                 if ((inst_count - res->age) > TAU && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
                 {
                     // stop the scan when algo found the first frame where the referenced is not set and the instruction since last use pass 49.
+                    if (a_out)
+                    {
+                        cout << "STOP ";
+                    }
                     scan = false;
+                    hand = ptr;
+                    min_last_inst = res->age;
                 }
                 else if (res->age < min_last_inst && processes[res->process_id]->page_table[res->virtual_page].referenced == 0)
                 {
@@ -390,7 +412,7 @@ public:
                     min_last_inst = res->age;
                 }
             }
-            cout << ptr << "(" << processes[res->process_id]->page_table[res->virtual_page].referenced << " " << res->age << ") ";
+
             if (processes[res->process_id]->page_table[res->virtual_page].referenced)
             {
                 processes[res->process_id]->page_table[res->virtual_page].referenced = 0;
@@ -404,7 +426,11 @@ public:
         }
         res = &frame_table[hand];
         res->is_victim = 1;
-        // cout << "| " << hand << endl;
+        if (a_out)
+        {
+            cout << "| " << hand << endl;
+        }
+
         hand++;
         if (hand >= num_frames)
         {
@@ -466,7 +492,7 @@ string pgfault_handler(pte_t *pte, int vpage)
         return string();
     }
     current_process->segv++;
-    return "SEGV";
+    return " SEGV";
 }
 
 void print_pgtable(pte_t page_table[], int pid)
@@ -718,6 +744,11 @@ int main(int argc, char *argv[])
     {
         // turn on the frame table output
         frame_out = 1;
+    }
+
+    if (options.find('a') != string::npos)
+    {
+        a_out = 1;
     }
 
     // initializing Pager algorithms
