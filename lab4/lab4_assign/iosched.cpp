@@ -5,6 +5,8 @@
 #include <getopt.h>
 #include <list>
 #include <iomanip>
+#include <cstdlib>
+#include <limits.h>
 
 using namespace std;
 
@@ -31,7 +33,7 @@ struct IORequest
 };
 
 list<IORequest *> requests;
-queue<IORequest *> finished_requests;
+list<IORequest *> finished_requests;
 int curr_time = 1;
 int curr_track = 0;
 int time_io_was_busy = 0;
@@ -42,6 +44,12 @@ bool v_out = false;
 bool q_out = false;
 IORequest *active_request = nullptr;
 
+// Comparator function to sort based on iop
+bool compareIop(const IORequest *a, const IORequest *b)
+{
+    return a->iop < b->iop;
+}
+
 // Define classes for different scheduling algorithms
 
 class Scheduler
@@ -50,7 +58,6 @@ public:
     virtual void addQ(IORequest *) = 0;
     virtual IORequest *get_next_request() = 0;
     virtual bool io_empty() = 0;
-    virtual void print_io_queue() = 0;
 };
 
 // FIFO Scheduler
@@ -58,33 +65,20 @@ class FIFO_Scheduler : public Scheduler
 {
     // Implement FIFO scheduling logic
 public:
-    void print_io_queue() override
-    {
-        for (auto request : IO_Queue)
-        {
-            cout << request->iop << ":" << request->track_number << " ";
-        }
-    }
-
     void addQ(IORequest *request) override
     {
         IO_Queue.push_back(request);
-        if (q_out)
-        {
-            cout << "Q=" << (active_request != nullptr ? 1 : 0) << " ( ";
-            print_io_queue();
-            cout << ")" << endl;
-        }
     }
 
     IORequest *get_next_request() override
     {
         IORequest *res = IO_Queue.front();
-        IO_Queue.pop_front();
+        IO_Queue.erase(IO_Queue.begin());
+        (res->track_number > curr_track) ? dir = 1 : dir = -1;
         return res;
     }
 
-    bool io_empty()
+    bool io_empty() override
     {
         if (IO_Queue.empty())
         {
@@ -94,31 +88,277 @@ public:
     }
 
 private:
-    list<IORequest *> IO_Queue;
+    vector<IORequest *> IO_Queue;
 };
 
 // SSTF Scheduler
 class SSTF_Scheduler : public Scheduler
 {
     // Implement SSTF scheduling logic
+public:
+    void addQ(IORequest *request) override
+    {
+        IO_Queue.push_back(request);
+    }
+
+    IORequest *get_next_request() override
+    {
+        auto closestIterator = IO_Queue.begin(); // Iterator to the closest element
+        int minDistance = abs(curr_track - (*closestIterator)->track_number);
+
+        for (auto it = IO_Queue.begin() + 1; it != IO_Queue.end(); ++it)
+        {
+            int distance = abs(curr_track - (*it)->track_number);
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closestIterator = it;
+            }
+        }
+
+        IORequest *res = *closestIterator;
+        if (q_out)
+        {
+            cout << "\tGet: "
+                 << "(";
+            for (auto request : IO_Queue)
+            {
+                cout << request->iop << ":" << abs(request->track_number - curr_track) << " ";
+            }
+            cout << ") --> " << res->iop << endl;
+        }
+        IO_Queue.erase(closestIterator);
+        (res->track_number > curr_track) ? dir = 1 : dir = -1;
+        return res;
+    }
+
+    bool io_empty() override
+    {
+        if (IO_Queue.empty())
+        {
+            return true;
+        }
+        return false;
+    }
+
+private:
+    vector<IORequest *> IO_Queue;
 };
 
 // LOOK Scheduler
 class LOOK_Scheduler : public Scheduler
 {
     // Implement LOOK scheduling logic
+    void addQ(IORequest *request) override
+    {
+        IO_Queue.push_back(request);
+    }
+
+    IORequest *get_next_request() override
+    {
+        bool found = false;
+        auto closestIterator = IO_Queue.begin();
+        int minDistance = INT_MAX;
+        for (auto it = IO_Queue.begin(); it != IO_Queue.end(); ++it)
+        {
+            int distance = abs(curr_track - (*it)->track_number);
+            if ((((*it)->track_number - curr_track) * dir >= 0) && distance < minDistance)
+            {
+                found = true;
+                minDistance = distance;
+                closestIterator = it;
+            }
+        }
+
+        if (!found) // if all requests are in the other direction
+        {
+            dir = -dir;
+            for (auto it = IO_Queue.begin(); it != IO_Queue.end(); ++it)
+            {
+                int distance = abs(curr_track - (*it)->track_number);
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    closestIterator = it;
+                }
+            }
+        }
+        IORequest *res = *closestIterator;
+        if (q_out)
+        {
+            // cout << curr_track << endl;
+            cout << "\tGet: "
+                 << "(";
+            for (auto request : IO_Queue)
+            {
+                cout << request->iop << ":" << dir * (request->track_number - curr_track) << " ";
+            }
+            cout << ") --> " << res->iop << " dir=" << dir << endl;
+        }
+        IO_Queue.erase(closestIterator);
+        return res;
+    }
+
+    bool io_empty() override
+    {
+        if (IO_Queue.empty())
+        {
+            return true;
+        }
+        return false;
+    }
+
+private:
+    vector<IORequest *> IO_Queue;
 };
 
 // CLOOK Scheduler
 class CLOOK_Scheduler : public Scheduler
 {
     // Implement CLOOK scheduling logic
+    void addQ(IORequest *request) override
+    {
+        IO_Queue.push_back(request);
+    }
+
+    IORequest *get_next_request() override
+    {
+        if (reverse)
+        {
+            reverse = false;
+            dir = -dir;
+        }
+        bool found = false;
+        auto closestIterator = IO_Queue.begin();
+        int minDistance = INT_MAX;
+        for (auto it = IO_Queue.begin(); it != IO_Queue.end(); ++it)
+        {
+            int distance = abs(curr_track - (*it)->track_number);
+            if ((((*it)->track_number - curr_track) * dir >= 0) && distance < minDistance)
+            {
+                found = true;
+                minDistance = distance;
+                closestIterator = it;
+            }
+        }
+
+        if (!found) // if all requests are in the other direction
+        {
+            reverse = true;
+            dir = -dir;
+            closestIterator = IO_Queue.begin();
+            for (auto it = IO_Queue.begin(); it != IO_Queue.end(); ++it)
+            {
+                if ((*it)->track_number < (*closestIterator)->track_number)
+                {
+                    closestIterator = it;
+                }
+            }
+        }
+        IORequest *res = *closestIterator;
+        if (q_out)
+        {
+            // cout << curr_track << endl;
+            cout << "\tGet: "
+                 << "(";
+            for (auto request : IO_Queue)
+            {
+                cout << request->iop << ":" << request->track_number - curr_track << " ";
+            }
+            cout << ") --> " << res->iop << " dir=" << dir << endl;
+        }
+        IO_Queue.erase(closestIterator);
+        return res;
+    }
+
+    bool io_empty() override
+    {
+        if (IO_Queue.empty())
+        {
+            return true;
+        }
+        return false;
+    }
+
+private:
+    vector<IORequest *> IO_Queue;
+    bool reverse = false;
 };
 
 // FLOOK Scheduler
 class FLOOK_Scheduler : public Scheduler
 {
     // Implement FLOOK scheduling logic
+    void addQ(IORequest *request) override
+    {
+        addQueue.push_back(request);
+    }
+
+    IORequest *get_next_request() override
+    {
+        if (activeQueue.empty())
+        {
+            activeQueue.swap(addQueue);
+        }
+        bool found = false;
+        auto closestIterator = activeQueue.begin();
+        int minDistance = INT_MAX;
+        for (auto it = activeQueue.begin(); it != activeQueue.end(); ++it)
+        {
+            int distance = abs(curr_track - (*it)->track_number);
+            if ((((*it)->track_number - curr_track) * dir >= 0) && distance < minDistance)
+            {
+                found = true;
+                minDistance = distance;
+                closestIterator = it;
+            }
+        }
+
+        if (!found) // if all requests are in the other direction
+        {
+            dir = -dir;
+            for (auto it = activeQueue.begin(); it != activeQueue.end(); ++it)
+            {
+                int distance = abs(curr_track - (*it)->track_number);
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    closestIterator = it;
+                }
+            }
+        }
+        IORequest *res = *closestIterator;
+        if (q_out)
+        {
+            // cout << curr_track << endl;
+            cout << "\tGet: Q[0] (";
+            for (auto request : activeQueue)
+            {
+                cout << request->iop << ":" << dir * (request->track_number - curr_track) << " ";
+            }
+            cout << ") Q[1] (";
+            for (auto request : addQueue)
+            {
+                cout << request->iop << ":" << dir * (request->track_number - curr_track) << " ";
+            }
+            cout << "--> " << res->iop << " dir=" << dir << endl;
+        }
+        activeQueue.erase(closestIterator);
+        return res;
+    }
+
+    bool io_empty() override
+    {
+        if (activeQueue.empty() && addQueue.empty())
+        {
+            return true;
+        }
+        return false;
+    }
+
+private:
+    vector<IORequest *> activeQueue;
+    vector<IORequest *> addQueue;
 };
 
 Scheduler *sched;
@@ -143,47 +383,55 @@ void Simulation()
         if (active_request != nullptr && active_request->track_number == curr_track)
         {
             active_request->end_time = curr_time;
-            cout << curr_time << ":\t" << active_request->iop << " finish " << active_request->end_time - active_request->arr_time << endl;
-            finished_requests.push(active_request);
+            if (v_out)
+            {
+                cout << curr_time << ":\t" << active_request->iop << " finish " << active_request->end_time - active_request->arr_time << endl;
+            }
+            finished_requests.push_back(active_request);
             active_request = nullptr;
             time_io_was_busy += curr_time - prev_io_change;
         }
         // If no IO is active
         // Check for pending requests and start a new IO if available
         // Otherwise, exit simulation if all requests are processed
-        if (active_request == nullptr)
+        while (active_request == nullptr && !sched->io_empty())
         {
-            if (sched->io_empty() && requests.empty())
+            active_request = sched->get_next_request();
+            active_request->start_time = curr_time;
+            prev_io_change = curr_time;
+            // if (q_out)
+            // {
+            //     cout << "AQ=" << (active_request != nullptr ? 1 : 0) << " dir=" << dir << " curtrack=" << curr_track << "\tQ[0]=( ";
+            //     if (active_request == nullptr)
+            //     {
+            //         cout << ")";
+            //     }
+            //     else
+            //     {
+            //         cout << active_request->iop << ":" << active_request->track_number << ":" << active_request->track_number - curr_track;
+            //     }
+            // }
+            if (v_out)
             {
-                break;
+                cout << curr_time << ":\t" << active_request->iop << " issue " << active_request->track_number << " " << curr_track << endl;
             }
-            else if (!sched->io_empty())
+            if (active_request->track_number == curr_track)
             {
-                active_request = sched->get_next_request();
-                active_request->start_time = curr_time;
-                prev_io_change = curr_time;
-                if (active_request->track_number <= curr_track)
-                {
-                    dir = -dir;
-                }
-                if (q_out)
-                {
-                    cout << "AQ=" << (active_request != nullptr ? 1 : 0) << " dir=" << dir << " curtrack=" << curr_track << "\tQ[0]=( ";
-                    if (active_request == nullptr)
-                    {
-                        cout << ")";
-                    }
-                    else
-                    {
-                        cout << active_request->iop << ":" << active_request->track_number << ":" << active_request->track_number - curr_track;
-                    }
-                }
+                active_request->end_time = curr_time;
                 if (v_out)
                 {
-                    cout << curr_time << ":\t" << active_request->iop << " issue " << active_request->track_number << " " << curr_track << endl;
+                    cout << curr_time << ":\t" << active_request->iop << " finish " << active_request->end_time - active_request->arr_time << endl;
                 }
+                finished_requests.push_back(active_request);
+                active_request = nullptr;
             }
         }
+
+        if (requests.empty() && sched->io_empty() && !active_request)
+        {
+            break;
+        }
+
         // If an IO is active, move the head by one unit
         if (active_request)
         {
@@ -212,6 +460,7 @@ int main(int argc, char *argv[])
             break;
         case 'v':
             v_out = true;
+            cout << "TRACE" << endl;
             break;
         case 'q':
             q_out = true;
@@ -224,6 +473,22 @@ int main(int argc, char *argv[])
     if (algo == 'N')
     {
         sched = new FIFO_Scheduler();
+    }
+    else if (algo == 'S')
+    {
+        sched = new SSTF_Scheduler();
+    }
+    else if (algo == 'L')
+    {
+        sched = new LOOK_Scheduler();
+    }
+    else if (algo == 'C')
+    {
+        sched = new CLOOK_Scheduler();
+    }
+    else if (algo == 'F')
+    {
+        sched = new FLOOK_Scheduler();
     }
     // Read input file and create IO requests
     // Store them in a suitable data structure
@@ -256,29 +521,36 @@ int main(int argc, char *argv[])
     inputFile.close();
     Simulation();
     // Compute statistics and print information for each IO request
-    cout << "request is empty: " << requests.empty() << endl;
-    cout << "ioq is empty: " << sched->io_empty() << endl;
     int total_turnaround = 0;
     int total_wait_time = 0;
     int max_wait_time = 0;
+    finished_requests.sort(compareIop);
     while (!finished_requests.empty())
     {
         IORequest *temp = finished_requests.front();
-        total_turnaround += temp->end_time - temp->start_time;
+        total_turnaround += temp->end_time - temp->arr_time;
         int curr_wait_time = temp->start_time - temp->arr_time;
         total_wait_time += curr_wait_time;
         if (max_wait_time < curr_wait_time)
         {
             max_wait_time = curr_wait_time;
         }
-        cout << setw(5) << temp->iop << temp->arr_time << temp->start_time << temp->end_time;
-        finished_requests.pop();
+        cout << setw(5) << temp->iop << ": "
+             << setw(5) << temp->arr_time << " "
+             << setw(5) << temp->start_time << " "
+             << setw(5) << temp->end_time << endl;
+        finished_requests.pop_front();
         delete temp;
     }
-    requests.clear();
-    delete sched;
     // Print SUM line with computed statistics
-    cout << "SUM: " << curr_time << " " << total_movement << time_io_was_busy / curr_time << " " << total_turnaround / iop << total_wait_time / iop << max_wait_time;
-    cout << "Simulation finished" << endl;
+    cout << "SUM: " << curr_time << " " << total_movement << " "
+         << fixed << setprecision(4) << static_cast<double>(time_io_was_busy) / curr_time << " "
+         << setprecision(2) << static_cast<double>(total_turnaround) / iop << " "
+         << setprecision(2) << static_cast<double>(total_wait_time) / iop << " " << max_wait_time << endl;
+    // cout << "request is empty: " << requests.empty() << endl;
+    // cout << "ioq is empty: " << sched->io_empty() << endl;
+    // cout << "Simulation finished" << endl;
+    delete sched;
+    requests.clear();
     return 0;
 }
